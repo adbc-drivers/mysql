@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   test:
-    uses: adbc-drivers/dev/.github/workflows/test.yaml@01806be538e2a08e5763fbd536c32582d33c184c
+    uses: adbc-drivers/dev/.github/workflows/test.yaml@927f3694fb73daeae130c9c22552e4889074b2fe
     secrets:
       dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
       driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
@@ -35,3 +35,4 @@ jobs:
       nightly_signing_private_key_password: ${{ secrets.NIGHTLY_SIGNING_PRIVATE_KEY_PASSWORD }}
     with:
       driver: mysql
+      subdir: .
