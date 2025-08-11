@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/adbc-drivers/driverbase-go/testutil"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -73,15 +74,15 @@ func TestDriver(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// create table
 	err = stmt.SetSqlQuery(`
@@ -293,15 +294,15 @@ func TestSchemaMetadata(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with various column types
 	err = stmt.SetSqlQuery(`
@@ -377,15 +378,15 @@ func TestMySQLTypeConverter(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with MySQL-specific types
 	err = stmt.SetSqlQuery(`
@@ -457,15 +458,15 @@ func TestDecimalTypeHandling(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with various DECIMAL types
 	err = stmt.SetSqlQuery(`
@@ -539,15 +540,15 @@ func TestTimestampPrecisionHandling(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with various timestamp precisions
 	err = stmt.SetSqlQuery(`
@@ -615,15 +616,15 @@ func TestQueryBatchSizeConfiguration(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with many rows
 	err = stmt.SetSqlQuery(`
@@ -683,7 +684,7 @@ func TestQueryBatchSizeConfiguration(t *testing.T) {
 			// Create new statement for each test
 			testStmt, err := cn.NewStatement()
 			require.NoError(t, err)
-			defer testStmt.Close()
+			defer testutil.CheckedClose(t, testStmt)
 
 			// Set the batch size
 			err = testStmt.SetOption("adbc.statement.batch_size", tc.batchSize)
@@ -749,22 +750,22 @@ func TestTypedBuilderHandling(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with various data types
 	err = stmt.SetSqlQuery(`
 		CREATE TEMPORARY TABLE adbc_test_typed_builders (
 			id INT PRIMARY KEY AUTO_INCREMENT,
 			tiny_int TINYINT,
-			small_int SMALLINT, 
+			small_int SMALLINT,
 			medium_int MEDIUMINT,
 			big_int BIGINT,
 			float_val FLOAT,
@@ -786,11 +787,11 @@ func TestTypedBuilderHandling(t *testing.T) {
 	// Insert test data with various types
 	err = stmt.SetSqlQuery(`
 		INSERT INTO adbc_test_typed_builders (
-			tiny_int, small_int, medium_int, big_int, 
+			tiny_int, small_int, medium_int, big_int,
 			float_val, double_val, varchar_val, text_val, bool_val,
 			decimal_val, timestamp_val, binary_val, json_val, enum_val
-		) VALUES 
-		(127, 32767, 8388607, 9223372036854775807, 
+		) VALUES
+		(127, 32767, 8388607, 9223372036854775807,
 		 3.14159, 2.718281828, 'test string', 'longer text content', true,
 		 123.45, '2023-12-25 10:30:00', X'48656C6C6F', '{"key": "value"}', 'red'),
 		(-128, -32768, -8388608, -9223372036854775808,
@@ -809,7 +810,7 @@ func TestTypedBuilderHandling(t *testing.T) {
 		SELECT id, tiny_int, small_int, medium_int, big_int,
 		       float_val, double_val, varchar_val, text_val, bool_val,
 		       decimal_val, timestamp_val, binary_val, json_val, enum_val
-		FROM adbc_test_typed_builders 
+		FROM adbc_test_typed_builders
 		ORDER BY id
 	`)
 	require.NoError(t, err)
@@ -947,15 +948,15 @@ func TestSQLNullableTypesHandling(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with nullable columns
 	err = stmt.SetSqlQuery(`
@@ -976,9 +977,9 @@ func TestSQLNullableTypesHandling(t *testing.T) {
 
 	// Insert test data with NULL values
 	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_nullable 
-		(nullable_int, nullable_bigint, nullable_float, nullable_text, nullable_bool, nullable_datetime, nullable_time) 
-		VALUES 
+		INSERT INTO adbc_test_nullable
+		(nullable_int, nullable_bigint, nullable_float, nullable_text, nullable_bool, nullable_datetime, nullable_time)
+		VALUES
 		(123, 456789, 12.34, 'test string', true, '2023-01-01 12:30:45', '14:30:00'),
 		(NULL, NULL, NULL, NULL, NULL, NULL, NULL),
 		(789, 987654, 56.78, 'another test', false, '2023-12-31 23:59:59', '23:59:59')
@@ -1052,15 +1053,15 @@ func TestExtendedArrowArrayTypes(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with different string and binary types
 	err = stmt.SetSqlQuery(`
@@ -1080,10 +1081,10 @@ func TestExtendedArrowArrayTypes(t *testing.T) {
 
 	// Insert test data
 	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_extended_types 
-		(varchar_col, text_col, longtext_col, binary_col, varbinary_col, blob_col) 
-		VALUES 
-		('short string', 'medium text content', 'very long text content that could be handled by different Arrow string types', 
+		INSERT INTO adbc_test_extended_types
+		(varchar_col, text_col, longtext_col, binary_col, varbinary_col, blob_col)
+		VALUES
+		('short string', 'medium text content', 'very long text content that could be handled by different Arrow string types',
 		 0x0123456789ABCDEF0123456789ABCDEF, 0x48656C6C6F, 0x576F726C64)
 	`)
 	require.NoError(t, err)
@@ -1148,15 +1149,15 @@ func TestTemporalAndDecimalExtraction(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with temporal and decimal types
 	err = stmt.SetSqlQuery(`
@@ -1177,12 +1178,12 @@ func TestTemporalAndDecimalExtraction(t *testing.T) {
 
 	// Insert test data with various temporal and decimal values
 	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_temporal_decimal 
-		(date_col, datetime_col, timestamp_col, time_col, decimal_precise, decimal_money, decimal_percentage) 
-		VALUES 
-		('2023-06-15', '2023-06-15 14:30:45.123456', '2023-06-15 14:30:45.123', '14:30:45.123456', 
+		INSERT INTO adbc_test_temporal_decimal
+		(date_col, datetime_col, timestamp_col, time_col, decimal_precise, decimal_money, decimal_percentage)
+		VALUES
+		('2023-06-15', '2023-06-15 14:30:45.123456', '2023-06-15 14:30:45.123', '14:30:45.123456',
 		 123.45, 1234567.8900, 99.999),
-		('2024-01-01', '2024-01-01 00:00:00.000000', '2024-01-01 00:00:00.000', '00:00:00.000000', 
+		('2024-01-01', '2024-01-01 00:00:00.000000', '2024-01-01 00:00:00.000', '00:00:00.000000',
 		 0.01, 0.0001, 0.001)
 	`)
 	require.NoError(t, err)
@@ -1269,15 +1270,15 @@ func TestMySQLCustomTypeConverter(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with MySQL-specific types that will use custom conversion
 	err = stmt.SetSqlQuery(`
@@ -1296,9 +1297,9 @@ func TestMySQLCustomTypeConverter(t *testing.T) {
 
 	// Insert test data with various MySQL-specific values
 	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_custom_converter 
-		(json_col, enum_col, timestamp_col, datetime_col, text_col) 
-		VALUES 
+		INSERT INTO adbc_test_custom_converter
+		(json_col, enum_col, timestamp_col, datetime_col, text_col)
+		VALUES
 		('{"key": "value", "number": 42}', 'value1', '2023-06-15 14:30:45', '2023-06-15 14:30:45', 'regular text'),
 		('{"array": [1, 2, 3], "nested": {"inner": true}}', 'value2', '2024-01-01 00:00:00', '2024-01-01 00:00:00', 'more text')
 	`)
@@ -1386,9 +1387,10 @@ func TestMySQLCustomTypeConverter(t *testing.T) {
 				require.True(t, len(jsonValue) > 0, "JSON value should not be empty")
 				require.True(t, jsonValue[0] == '{', "JSON should start with {")
 				// Check for content specific to each row
-				if rowIdx == 0 {
+				switch rowIdx {
+				case 0:
 					require.Contains(t, jsonValue, "key", "First JSON should contain 'key'")
-				} else if rowIdx == 1 {
+				case 1:
 					require.Contains(t, jsonValue, "array", "Second JSON should contain 'array'")
 				}
 			}
@@ -1446,15 +1448,15 @@ func TestMySQLTypeConverterEdgeCases(t *testing.T) {
 		adbc.OptionKeyURI: dsn,
 	})
 	require.NoError(t, err)
-	defer db.Close()
+	defer testutil.CheckedClose(t, db)
 
 	cn, err := db.Open(context.Background())
 	require.NoError(t, err)
-	defer cn.Close()
+	defer testutil.CheckedClose(t, cn)
 
 	stmt, err := cn.NewStatement()
 	require.NoError(t, err)
-	defer stmt.Close()
+	defer testutil.CheckedClose(t, stmt)
 
 	// Create test table with edge cases
 	err = stmt.SetSqlQuery(`
@@ -1474,9 +1476,9 @@ func TestMySQLTypeConverterEdgeCases(t *testing.T) {
 
 	// Insert edge case data
 	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_converter_edge_cases 
-		(json_null, json_empty, json_invalid, enum_null, timestamp_null, large_json) 
-		VALUES 
+		INSERT INTO adbc_test_converter_edge_cases
+		(json_null, json_empty, json_invalid, enum_null, timestamp_null, large_json)
+		VALUES
 		(NULL, '{}', 'not json', NULL, NULL, '{"large": "data", "array": [1,2,3,4,5], "nested": {"deep": {"deeper": "value"}}}'),
 		('null', '[]', 'also not json', 'a', '2023-01-01 12:00:00', '{"simple": true}')
 	`)

@@ -5,6 +5,8 @@ github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250811052056-c831c44c3
 github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250811052056-c831c44c3448 h1:ee4ZqUI2sb9L+DpEoekx3NJpu7yUnmNCWKbt62z3lug=
 github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250811052056-c831c44c3448/go.mod h1:PpRHMr74ZUWMSp7gSpdKN9w4yQl+DgTorIZjp4TH/Ik=
 github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250731064235-065e6cfecc98/go.mod h1:kJ+9YBXwicVHhK05zLafFD1bOP3k+LArcp+L959YKYw=
+github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250811062117-e923dd1b0b5b h1:18PNlHlzr0AJkqXJr5qttr9/YdlA7rlBeiOpW7tdyMw=
+github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250811062117-e923dd1b0b5b/go.mod h1:kJ+9YBXwicVHhK05zLafFD1bOP3k+LArcp+L959YKYw=
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
 github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/apache/arrow-adbc/go/adbc v1.7.0 h1:ts1+qiZl6KOUHxkXQGx3B4zkCMKDpoaxgV2+kp33q9o=

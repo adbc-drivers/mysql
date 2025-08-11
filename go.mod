@@ -28,7 +28,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250811052056-c831c44c3448 // indirect
-	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250731064235-065e6cfecc98 // indirect
+	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250811062117-e923dd1b0b5b // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apache/thrift v0.22.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
