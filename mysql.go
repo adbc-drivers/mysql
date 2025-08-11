@@ -86,7 +86,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 }
 
 // ConvertSQLToArrow implements MySQL-specific SQL value to Arrow value conversion
-func (m *mySQLTypeConverter) ConvertSQLToArrow(sqlValue any, field arrow.Field) (any, error) {
+func (m *mySQLTypeConverter) ConvertSQLToArrow(sqlValue any, field *arrow.Field) (any, error) {
 	// Handle MySQL-specific type conversions
 	switch field.Type.(type) {
 	case *arrow.TimestampType:
@@ -134,7 +134,7 @@ func (m *mySQLTypeConverter) ConvertSQLToArrow(sqlValue any, field arrow.Field) 
 }
 
 // ConvertArrowToGo implements MySQL-specific Arrow value to Go value conversion
-func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int, field arrow.Field) (any, error) {
+func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int, field *arrow.Field) (any, error) {
 	if arrowArray.IsNull(index) {
 		return nil, nil
 	}
