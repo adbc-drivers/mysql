@@ -14,7 +14,7 @@
 
 from pathlib import Path
 
-from adbc_drivers_validation import model
+from adbc_drivers_validation import model, quirks
 
 
 class MySQLQuirks(model.DriverQuirks):
@@ -51,35 +51,10 @@ class MySQLQuirks(model.DriverQuirks):
         return Path(__file__).parent.parent / "queries"
 
     def bind_parameter(self, index: int) -> str:
-        return f"${index}"
-
-    # def drop_table(
-    #     self,
-    #     *,
-    #     table_name: str,
-    #     schema_name: str | None = None,
-    #     catalog_name: str | None = None,
-    #     if_exists: bool = True,
-    #     temporary: bool = False,
-    # ) -> None:
-    #     if temporary:
-    #         if catalog_name or schema_name:
-    #             raise ValueError("Cannot pass catalog/schema name for temporary table")
-    #         table_name = self.qualify_temp_table(table_name)
-    #         if if_exists:
-    #             return f"DROP TABLE IF EXISTS {table_name}"
-    #         return f"DROP TABLE {table_name}"
-
-    #     return super().drop_table(
-    #         table_name=table_name,
-    #         schema_name=schema_name,
-    #         catalog_name=catalog_name,
-    #         if_exists=if_exists,
-    #         temporary=temporary,
-    #     )
+        return "?"
 
     def is_table_not_found(self, table_name: str, error: Exception) -> bool:
         raise error
 
-    # def split_statement(self, statement: str) -> list[str]:
-    #     return quirks.split_statement(statement)
+    def split_statement(self, statement: str) -> list[str]:
+        return quirks.split_statement(statement)

@@ -1,11 +1,11 @@
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
-github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250812014344-bf82953c6028 h1:zuj/GsVSSekkG+p7I2yq6OI1DuQGI1SmUuYHlyRQ6gE=
-github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250812014344-bf82953c6028/go.mod h1:atY7SfGnt5elHKyGAkmJWFmwXzOtqrdUCZQyI+CRb58=
-github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250812014344-bf82953c6028 h1:eEwUa7d/BaBSSyoIj42DZ0HKWPMp09bIdgb6fvmeKlg=
-github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250812014344-bf82953c6028/go.mod h1:9aBZDCkD3XpQzyt4n6msGfr/PRtbs8qcMQU1hC9Hyok=
-github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250812014344-bf82953c6028 h1:TA8e0RDLhn7Qs6L8J3en2R9hcyQB80wFmoX+eYGVMvI=
-github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250812014344-bf82953c6028/go.mod h1:kJ+9YBXwicVHhK05zLafFD1bOP3k+LArcp+L959YKYw=
+github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250812064829-1166585d82b8 h1:/SNHCi5uPjJBmjYzfELIPZaapgsgD5sSUVOnKeDPN5k=
+github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250812064829-1166585d82b8/go.mod h1:atY7SfGnt5elHKyGAkmJWFmwXzOtqrdUCZQyI+CRb58=
+github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250812064829-1166585d82b8 h1:tg0/8iWUajxFh89HBGv7QsOF2NS3hNJbV6CZoD68KJ0=
+github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250812064829-1166585d82b8/go.mod h1:ikaJlHuzj7yNwBaBawWOZiiFM1dx7pLwcsWUIRDXmos=
+github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250812064829-1166585d82b8 h1:L7TAavozVGg2xASc+sN+eoFlMWxCQ4rNJRSgs8YcoS4=
+github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250812064829-1166585d82b8/go.mod h1:kJ+9YBXwicVHhK05zLafFD1bOP3k+LArcp+L959YKYw=
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
 github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/apache/arrow-adbc/go/adbc v1.7.0 h1:ts1+qiZl6KOUHxkXQGx3B4zkCMKDpoaxgV2+kp33q9o=

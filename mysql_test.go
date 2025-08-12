@@ -1199,7 +1199,7 @@ func TestTemporalAndDecimalExtraction(t *testing.T) {
 					case 0: // id - should be int
 						require.Equal(t, arrow.PrimitiveTypes.Int32, col.DataType())
 					case 1: // date_col - should be date
-						require.Equal(t, arrow.FixedWidthTypes.Date64, col.DataType())
+						require.Equal(t, arrow.FixedWidthTypes.Date32, col.DataType())
 					case 2, 3: // datetime_col, timestamp_col - should be timestamp
 						timestampType, ok := col.DataType().(*arrow.TimestampType)
 						require.True(t, ok, "Should be timestamp type")

@@ -42,6 +42,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 	switch typeName {
 	case "JSON":
 		// Convert MySQL JSON to Arrow string with special metadata
+		// TODO: we should use arrow.json extension type
 		metadataMap := map[string]string{
 			"sql.database_type_name": colType.DatabaseTypeName(),
 			"sql.column_name":        colType.Name(),
@@ -58,6 +59,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 
 	case "GEOMETRY", "POINT", "LINESTRING", "POLYGON", "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON":
 		// Convert MySQL spatial types to binary with spatial metadata
+		// TODO: we should use geoarrow extension types if applicable
 		metadata := arrow.MetadataFrom(map[string]string{
 			"sql.database_type_name": colType.DatabaseTypeName(),
 			"sql.column_name":        colType.Name(),
