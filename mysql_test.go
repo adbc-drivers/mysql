@@ -161,8 +161,6 @@ func TestDriver(t *testing.T) {
 	require.Equal(t, "apple", valCol.Value(0))  // First row val
 	require.Equal(t, "banana", valCol.Value(1)) // Second row val
 
-	record.Release()
-
 	// Should be no more batches for this small result
 	hasNext = reader.Next()
 	require.False(t, hasNext, "Should not have more batches")
@@ -223,8 +221,6 @@ func TestDriver(t *testing.T) {
 	totalRows := countCol.Value(0)
 	require.Equal(t, int64(5), totalRows) // 2 original + 3 new = 5 total
 
-	countRecord.Release()
-
 	// Test BindStream for streaming bulk insert
 	err = stmt.SetSqlQuery("INSERT INTO adbc_test_driver (val) VALUES (?)")
 	require.NoError(t, err)
@@ -278,11 +274,6 @@ func TestDriver(t *testing.T) {
 	finalCountCol := finalCountRecord.Column(0).(*array.Int64)
 	finalTotalRows := finalCountCol.Value(0)
 	require.Equal(t, int64(9), finalTotalRows) // 5 previous + 4 new = 9 total
-
-	finalCountRecord.Release()
-
-	t.Log("✅ TestDriver passed successfully")
-
 }
 
 // TestSchemaMetadata tests that SQL type metadata is included in Arrow schema
@@ -717,8 +708,6 @@ func TestQueryBatchSizeConfiguration(t *testing.T) {
 				// Verify batch doesn't exceed expected size (except for last batch)
 				expectedBatchSize, _ := strconv.Atoi(tc.batchSize)
 				require.LessOrEqual(t, int(batchRows), expectedBatchSize, "Batch size should not exceed configured limit")
-
-				record.Release()
 			}
 
 			require.NoError(t, reader.Err())
@@ -869,7 +858,7 @@ func TestTypedBuilderHandling(t *testing.T) {
 		t.Logf("Batch %d: %d rows", batchCount, batchRows)
 
 		// Verify data types and values for each column
-		for colIdx := 0; colIdx < int(record.NumCols()); colIdx++ {
+		for colIdx := range int(record.NumCols()) {
 			field := schema.Field(colIdx)
 			column := record.Column(colIdx)
 
@@ -926,8 +915,6 @@ func TestTypedBuilderHandling(t *testing.T) {
 				}
 			}
 		}
-
-		record.Release()
 	}
 
 	require.NoError(t, reader.Err())
@@ -1029,8 +1016,6 @@ func TestSQLNullableTypesHandling(t *testing.T) {
 				t.Log("✅ NULL values correctly handled")
 			}
 		}
-
-		record.Release()
 	}
 
 	require.NoError(t, reader.Err())
@@ -1122,8 +1107,6 @@ func TestExtendedArrowArrayTypes(t *testing.T) {
 				require.Greater(t, val, int32(0), "ID should be positive")
 			}
 		}
-
-		record.Release()
 	}
 
 	require.NoError(t, reader.Err())
@@ -1239,8 +1222,6 @@ func TestTemporalAndDecimalExtraction(t *testing.T) {
 				}
 			}
 		}
-
-		record.Release()
 	}
 
 	require.NoError(t, reader.Err())
@@ -1414,8 +1395,6 @@ func TestMySQLCustomTypeConverter(t *testing.T) {
 				require.True(t, datetimeValue > 0, "Datetime should be positive")
 			}
 		}
-
-		record.Release()
 	}
 
 	require.NoError(t, reader.Err())
@@ -1532,8 +1511,6 @@ func TestMySQLTypeConverterEdgeCases(t *testing.T) {
 				require.True(t, largeJson[0] == '{', "Large JSON should be valid JSON object")
 			}
 		}
-
-		record.Release()
 	}
 
 	require.NoError(t, reader.Err())
