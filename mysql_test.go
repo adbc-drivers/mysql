@@ -34,13 +34,14 @@ import (
 )
 
 // getDSN returns the MySQL DSN for testing, using environment variable or default
-func getDSN() string {
+func getDSN(t *testing.T) string {
 	// You can set MYSQL_DSN environment variable for custom connection
 	// Default assumes local MySQL with root/password setup
 	if dsn := os.Getenv("MYSQL_DSN"); dsn != "" {
 		return dsn
 	}
-	return "root:password@tcp(localhost:3306)/mysql"
+	t.Skip("Set MYSQL_DSN")
+	return ""
 }
 
 // Helper function to create Arrow records from string data
@@ -66,9 +67,9 @@ func createTestRecords(allocator memory.Allocator, schema *arrow.Schema, batches
 }
 
 func TestDriver(t *testing.T) {
-	dsn := getDSN()
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -286,9 +287,9 @@ func TestDriver(t *testing.T) {
 
 // TestSchemaMetadata tests that SQL type metadata is included in Arrow schema
 func TestSchemaMetadata(t *testing.T) {
-	dsn := getDSN()
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -370,9 +371,9 @@ func TestSchemaMetadata(t *testing.T) {
 
 // TestMySQLTypeConverter tests MySQL-specific type converter enhancements
 func TestMySQLTypeConverter(t *testing.T) {
-	dsn := getDSN()
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -450,9 +451,9 @@ func TestMySQLTypeConverter(t *testing.T) {
 
 // TestDecimalTypeHandling tests that DECIMAL types are properly converted to Arrow Decimal128
 func TestDecimalTypeHandling(t *testing.T) {
-	dsn := getDSN()
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -532,9 +533,9 @@ func TestDecimalTypeHandling(t *testing.T) {
 
 // TestTimestampPrecisionHandling tests that TIMESTAMP/DATETIME types use correct Arrow timestamp units
 func TestTimestampPrecisionHandling(t *testing.T) {
-	dsn := getDSN()
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -608,9 +609,9 @@ func TestTimestampPrecisionHandling(t *testing.T) {
 
 // TestQueryBatchSizeConfiguration tests that the batch size configuration affects query streaming
 func TestQueryBatchSizeConfiguration(t *testing.T) {
-	dsn := getDSN()
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -742,9 +743,9 @@ func TestQueryBatchSizeConfiguration(t *testing.T) {
 
 // TestTypedBuilderHandling tests that the sqlRecordReader properly handles different data types with typed builders
 func TestTypedBuilderHandling(t *testing.T) {
-	dsn := getDSN()
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -937,12 +938,9 @@ func TestTypedBuilderHandling(t *testing.T) {
 }
 
 func TestSQLNullableTypesHandling(t *testing.T) {
-	dsn := getDSN()
-	if dsn == "" {
-		t.Skip("MySQL DSN not available")
-	}
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -1042,12 +1040,9 @@ func TestSQLNullableTypesHandling(t *testing.T) {
 }
 
 func TestExtendedArrowArrayTypes(t *testing.T) {
-	dsn := getDSN()
-	if dsn == "" {
-		t.Skip("MySQL DSN not available")
-	}
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -1138,12 +1133,9 @@ func TestExtendedArrowArrayTypes(t *testing.T) {
 }
 
 func TestTemporalAndDecimalExtraction(t *testing.T) {
-	dsn := getDSN()
-	if dsn == "" {
-		t.Skip("MySQL DSN not available")
-	}
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -1259,12 +1251,9 @@ func TestTemporalAndDecimalExtraction(t *testing.T) {
 
 // TestMySQLCustomTypeConverter tests the custom MySQL TypeConverter value conversion methods
 func TestMySQLCustomTypeConverter(t *testing.T) {
-	dsn := getDSN()
-	if dsn == "" {
-		t.Skip("MySQL DSN not available")
-	}
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,
@@ -1437,12 +1426,9 @@ func TestMySQLCustomTypeConverter(t *testing.T) {
 
 // TestMySQLTypeConverterEdgeCases tests edge cases and error conditions in the custom MySQL TypeConverter
 func TestMySQLTypeConverterEdgeCases(t *testing.T) {
-	dsn := getDSN()
-	if dsn == "" {
-		t.Skip("MySQL DSN not available")
-	}
+	dsn := getDSN(t)
 
-	mysqlDriver := mysql.NewDriver()
+	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
 
 	db, err := mysqlDriver.NewDatabase(map[string]string{
 		adbc.OptionKeyURI: dsn,

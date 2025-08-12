@@ -26,6 +26,7 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/go-ext/variant"
 )
 
@@ -190,9 +191,9 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 }
 
 // NewDriver constructs the ADBC Driver for "mysql".
-func NewDriver() adbc.Driver {
-	// Create sqlwrapper driver with MySQL type converter and driver name
-	return sqlwrapper.NewDriver("mysql", &mySQLTypeConverter{
+func NewDriver(alloc memory.Allocator) adbc.Driver {
+	typeConverter := &mySQLTypeConverter{
 		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{},
-	})
+	}
+	return sqlwrapper.NewDriver(alloc, "mysql", "MySQL", typeConverter)
 }
