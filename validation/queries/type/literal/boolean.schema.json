@@ -4,12 +4,20 @@
         {
             "name": "res",
             "format": "u",
-            "flags": ["nullable"]
+            "flags": ["nullable"],
+            "metadata": {
+                "ARROW:extension:name": "arrow.opaque",
+                "ARROW:extension:metadata": "{\"type_name\": \"TINYINT\", \"vendor_name\": \"MySQL\"}"
+            }
         },
         {
-            "name": "res2",
+            "name": "res2", 
             "format": "u",
-            "flags": ["nullable"]
+            "flags": ["nullable"],
+            "metadata": {
+                "ARROW:extension:name": "arrow.opaque",
+                "ARROW:extension:metadata": "{\"type_name\": \"TINYINT\", \"vendor_name\": \"MySQL\"}"
+            }
         }
     ]
 }

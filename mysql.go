@@ -27,6 +27,7 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/go-ext/variant"
 )
@@ -93,7 +94,10 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 		maps.Copy(metadataMap, TinyIntTypeMetadata)
 		metadata := arrow.MetadataFrom(metadataMap)
 
-		return arrow.BinaryTypes.String, nullable, metadata, nil
+		// Create arrow.opaque extension type with string storage
+		opaqueType := extensions.NewOpaqueType(arrow.BinaryTypes.String, "TINYINT", "MySQL")
+
+		return opaqueType, nullable, metadata, nil
 
 	default:
 		// Fall back to default conversion for standard types
@@ -105,11 +109,6 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 func (m *mySQLTypeConverter) ConvertSQLToArrow(sqlValue any, field *arrow.Field) (any, error) {
 	// Handle MySQL-specific type conversions
 	switch field.Type.(type) {
-	case *arrow.TimestampType:
-		// MySQL TIMESTAMP is timezone-aware, but let the default converter handle the actual conversion
-		// The default converter now properly handles []byte to time.Time conversion
-		return m.DefaultTypeConverter.ConvertSQLToArrow(sqlValue, field)
-
 	case *arrow.StringType:
 		// Handle MySQL JSON types specially
 		if isJSON, ok := field.Metadata.GetValue("mysql.is_json"); ok && isJSON == "true" {
@@ -179,25 +178,19 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		// Fall through to default binary handling
 		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
 
-	case *array.Timestamp:
-		// For timestamp arrays, check if they need timezone conversion
-		timestampType := a.DataType().(*arrow.TimestampType)
-		value := a.Value(index)
+	case *array.Time32:
+		// For MySQL driver, always convert Time32 arrays to time-only format strings
+		// This handles both explicit TIME column metadata and parameter binding scenarios
+		timeType := a.DataType().(*arrow.Time32Type)
+		t := a.Value(index).ToTime(timeType.Unit)
+		return t.Format("15:04:05.000000"), nil
 
-		// Check if this is a MySQL TIMESTAMP vs DATETIME
-		if dbType, ok := field.Metadata.GetValue("sql.database_type_name"); ok {
-			if strings.ToUpper(dbType) == "TIMESTAMP" {
-				// MySQL TIMESTAMP - ensure proper timezone handling
-				time := value.ToTime(timestampType.Unit)
-				// If the timestamp type has no timezone, assume UTC for MySQL TIMESTAMP
-				if timestampType.TimeZone == "" {
-					time = time.UTC()
-				}
-				return time, nil
-			}
-		}
-		// Fall through to default timestamp handling
-		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
+	case *array.Time64:
+		// For MySQL driver, always convert Time64 arrays to time-only format strings
+		// This handles both explicit TIME column metadata and parameter binding scenarios
+		timeType := a.DataType().(*arrow.Time64Type)
+		t := a.Value(index).ToTime(timeType.Unit)
+		return t.Format("15:04:05.000000"), nil
 
 	default:
 		// For all other types, use default conversion
