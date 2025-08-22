@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name = "ADBC MySQL Driver - Go"
+name = "ADBC Driver Foundry Driver for MySQL"
 publisher = "ADBC Drivers Contributors"
 license = "Apache-2.0"
 version = "v0.1.0"
