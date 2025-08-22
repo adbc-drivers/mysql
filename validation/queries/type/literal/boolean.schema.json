@@ -11,7 +11,7 @@
             }
         },
         {
-            "name": "res2", 
+            "name": "res2",
             "format": "u",
             "flags": ["nullable"],
             "metadata": {
