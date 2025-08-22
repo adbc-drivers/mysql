@@ -14,7 +14,7 @@
   limitations under the License.
 -->
 
-# ADBC Driver for MySQL
+# ADBC MySQL Driver - Go
 
 Not affiliated with MySQL or Oracle.
 

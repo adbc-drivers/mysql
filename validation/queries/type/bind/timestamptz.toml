@@ -12,10 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name = "ADBC MySQL Driver - Go"
-publisher = "ADBC Drivers Contributors"
-license = "Apache-2.0"
-version = "v0.1.0"
-
-[ADBC]
-version = "v1.1.0"
+skip = "MySQL doesn't support the SQL standard TIMESTAMP WITH TIME ZONE syntax"

@@ -1,0 +1,15 @@
+{
+    "format": "+s",
+    "children": [
+        {
+            "name": "res",
+            "format": "u",
+            "flags": ["nullable"]
+        },
+        {
+            "name": "res2",
+            "format": "u",
+            "flags": ["nullable"]
+        }
+    ]
+}

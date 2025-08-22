@@ -17,6 +17,7 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
+	"maps"
 	"strings"
 
 	// register the "mysql" driver with database/sql
@@ -38,6 +39,7 @@ type mySQLTypeConverter struct {
 // ConvertColumnType implements TypeConverter with MySQL-specific enhancements
 func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.DataType, bool, arrow.Metadata, error) {
 	typeName := strings.ToUpper(colType.DatabaseTypeName())
+	nullable, _ := colType.Nullable()
 
 	switch typeName {
 	case "JSON":
@@ -55,7 +57,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return arrow.BinaryTypes.String, true, metadata, nil
+		return arrow.BinaryTypes.String, nullable, metadata, nil
 
 	case "GEOMETRY", "POINT", "LINESTRING", "POLYGON", "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON":
 		// Convert MySQL spatial types to binary with spatial metadata
@@ -65,7 +67,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 			"sql.column_name":        colType.Name(),
 			"mysql.is_spatial":       "true",
 		})
-		return arrow.BinaryTypes.Binary, true, metadata, nil
+		return arrow.BinaryTypes.Binary, nullable, metadata, nil
 
 	case "ENUM", "SET":
 		// Handle ENUM/SET as string with special metadata
@@ -80,7 +82,18 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return arrow.BinaryTypes.String, true, metadata, nil
+		return arrow.BinaryTypes.String, nullable, metadata, nil
+
+	case "TINYINT":
+		metadataMap := map[string]string{
+			"sql.database_type_name": colType.DatabaseTypeName(),
+			"sql.column_name":        colType.Name(),
+		}
+
+		maps.Copy(metadataMap, TinyIntTypeMetadata)
+		metadata := arrow.MetadataFrom(metadataMap)
+
+		return arrow.BinaryTypes.String, nullable, metadata, nil
 
 	default:
 		// Fall back to default conversion for standard types

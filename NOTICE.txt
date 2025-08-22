@@ -1,4 +1,4 @@
-ADBC Driver for MySQL
+ADBC MySQL Driver - Go
 Copyright 2025 ADBC Drivers Contributors
 
 This product includes software developed at
