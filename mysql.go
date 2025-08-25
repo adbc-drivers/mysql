@@ -17,7 +17,6 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
-	"maps"
 	"strings"
 
 	// register the "mysql" driver with database/sql
@@ -27,7 +26,6 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/go-ext/variant"
 )
@@ -91,13 +89,9 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 			"sql.column_name":        colType.Name(),
 		}
 
-		maps.Copy(metadataMap, TinyIntTypeMetadata)
 		metadata := arrow.MetadataFrom(metadataMap)
 
-		// Create arrow.opaque extension type with string storage
-		opaqueType := extensions.NewOpaqueType(arrow.PrimitiveTypes.Int8, "TINYINT", "MySQL")
-
-		return opaqueType, nullable, metadata, nil
+		return arrow.PrimitiveTypes.Int8, nullable, metadata, nil
 
 	default:
 		// Fall back to default conversion for standard types
