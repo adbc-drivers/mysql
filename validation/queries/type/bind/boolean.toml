@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-sort-keys = [["res", "ascending"]]
+sort-keys = []
 
 [tags]
 sql-type-name = "BOOLEAN"

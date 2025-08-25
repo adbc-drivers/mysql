@@ -3,7 +3,7 @@
     "children": [
         {
             "name": "res",
-            "format": "u",
+            "format": "c",
             "flags": ["nullable"],
             "metadata": {
                 "ARROW:extension:name": "arrow.opaque",

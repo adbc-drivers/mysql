@@ -3,21 +3,13 @@
     "children": [
         {
             "name": "res",
-            "format": "u",
-            "flags": ["nullable"],
-            "metadata": {
-                "ARROW:extension:name": "arrow.opaque",
-                "ARROW:extension:metadata": "{\"type_name\": \"TINYINT\", \"vendor_name\": \"MySQL\"}"
-            }
+            "format": "l",
+            "flags": ["nullable"]
         },
         {
             "name": "res2",
-            "format": "u",
-            "flags": ["nullable"],
-            "metadata": {
-                "ARROW:extension:name": "arrow.opaque",
-                "ARROW:extension:metadata": "{\"type_name\": \"TINYINT\", \"vendor_name\": \"MySQL\"}"
-            }
+            "format": "l",
+            "flags": ["nullable"]
         }
     ]
 }

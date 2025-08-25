@@ -95,7 +95,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 		metadata := arrow.MetadataFrom(metadataMap)
 
 		// Create arrow.opaque extension type with string storage
-		opaqueType := extensions.NewOpaqueType(arrow.BinaryTypes.String, "TINYINT", "MySQL")
+		opaqueType := extensions.NewOpaqueType(arrow.PrimitiveTypes.Int8, "TINYINT", "MySQL")
 
 		return opaqueType, nullable, metadata, nil
 

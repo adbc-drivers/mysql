@@ -12,4 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-skip = "pyarrow.lib.ArrowNotImplementedError: decimal64(10, 2) ? - Need revision"
+sort-keys = []
+
+[tags]
+sql-type-name = "NUMERIC"
