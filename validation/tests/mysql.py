@@ -20,7 +20,7 @@ from adbc_drivers_validation import model, quirks
 class MySQLQuirks(model.DriverQuirks):
     name = "mysql"
     driver = "adbc_driver_mysql"
-    driver_name = "ADBC MySQL Driver - Go"
+    driver_name = "ADBC Driver for MySQL"
     vendor_name = "MySQL"
     features = model.DriverFeatures(
         connection_get_table_schema=False,
