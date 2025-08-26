@@ -15,7 +15,6 @@
 name = "ADBC Driver Foundry Driver for MySQL"
 publisher = "ADBC Drivers Contributors"
 license = "Apache-2.0"
-version = "v0.1.0"
 
 [ADBC]
 version = "v1.1.0"

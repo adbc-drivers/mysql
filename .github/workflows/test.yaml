@@ -23,16 +23,24 @@ on:
 permissions:
   contents: read
   id-token: write
+  packages: read
 
 jobs:
   test:
-    uses: adbc-drivers/dev/.github/workflows/test.yaml@39257c24c9020a36f2c1aea9682e5f3a8b3a817c
+    uses: adbc-drivers/dev/.github/workflows/test.yaml@9b923aaf352c993a4587327e032e50931d79d177
     secrets:
       dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
       driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
-      nightly_signing_private_key: ${{ secrets.NIGHTLY_SIGNING_PRIVATE_KEY }}
-      nightly_signing_private_key_id: ${{ secrets.NIGHTLY_SIGNING_PRIVATE_KEY_ID }}
-      nightly_signing_private_key_password: ${{ secrets.NIGHTLY_SIGNING_PRIVATE_KEY_PASSWORD }}
+    with:
+      driver: mysql
+      subdir: .
+
+  validate:
+    uses: adbc-drivers/dev/.github/workflows/validate.yaml@9b923aaf352c993a4587327e032e50931d79d177
+    secrets:
+      dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
+      driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
+      validation_private_key: ${{ secrets.VALIDATION_DEPLOY_KEY }}
     with:
       driver: mysql
       subdir: .

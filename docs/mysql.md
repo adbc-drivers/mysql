@@ -1,3 +1,4 @@
+---
 # Copyright (c) 2025 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,21 +12,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+{}
+---
 
-[workspace]
-authors = ["ADBC Drivers Contributors"]
-channels = ["conda-forge"]
-name = "validation"
-platforms = ["linux-64"]
-version = "0.1.0"
+{{ cross_reference|safe }}
+# MySQL Driver {{ version }}
 
-[tasks]
-test = "pytest -vvs --junit-xml=validation-report.xml -rfEsxX tests/"
-gendocs = "python -m tests.generate_documentation"
+{{ version_header|safe }}
 
-[dependencies]
-python = ">=3.13,<4"
-pytest-lazy-fixtures = ">=1.3.2,<2"
+This driver provides access to [MySQL][mysql]{target="_blank"}, a free and
+open-source relational database management system.
 
-[pypi-dependencies]
-adbc-drivers-validation = { git = "ssh://git@github.com/adbc-drivers/validation", rev = "38c2e51a0b028910cbdaae394f293250de0d8cc7" }
+## Installation & Quickstart
+
+The driver can be installed with `dbc`.
+
+To use the driver, provide the MySQL DSN as the `url` option.
+
+## Feature & Type Support
+{{ features|safe }}
+
+### Types
+{{ types|safe }}
+
+[mysql]: https://www.mysql.com/

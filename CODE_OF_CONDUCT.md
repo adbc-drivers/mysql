@@ -14,20 +14,4 @@
   limitations under the License.
 -->
 
-# ADBC Driver for MySQL
-
-Not affiliated with MySQL or Oracle.
-
-An [ADBC driver](https://arrow.apache.org/adbc/) for MySQL.
-
-## Installation
-
-Drivers can be installed with `dbc`.
-
-## Building
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+# ADBC Driver Foundry Code of Conduct
