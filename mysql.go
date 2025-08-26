@@ -38,6 +38,7 @@ type mySQLTypeConverter struct {
 // ConvertColumnType implements TypeConverter with MySQL-specific enhancements
 func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.DataType, bool, arrow.Metadata, error) {
 	typeName := strings.ToUpper(colType.DatabaseTypeName())
+	nullable, _ := colType.Nullable()
 
 	switch typeName {
 	case "JSON":
@@ -55,7 +56,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return arrow.BinaryTypes.String, true, metadata, nil
+		return arrow.BinaryTypes.String, nullable, metadata, nil
 
 	case "GEOMETRY", "POINT", "LINESTRING", "POLYGON", "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON":
 		// Convert MySQL spatial types to binary with spatial metadata
@@ -65,7 +66,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 			"sql.column_name":        colType.Name(),
 			"mysql.is_spatial":       "true",
 		})
-		return arrow.BinaryTypes.Binary, true, metadata, nil
+		return arrow.BinaryTypes.Binary, nullable, metadata, nil
 
 	case "ENUM", "SET":
 		// Handle ENUM/SET as string with special metadata
@@ -80,7 +81,17 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return arrow.BinaryTypes.String, true, metadata, nil
+		return arrow.BinaryTypes.String, nullable, metadata, nil
+
+	case "TINYINT":
+		metadataMap := map[string]string{
+			"sql.database_type_name": colType.DatabaseTypeName(),
+			"sql.column_name":        colType.Name(),
+		}
+
+		metadata := arrow.MetadataFrom(metadataMap)
+
+		return arrow.PrimitiveTypes.Int8, nullable, metadata, nil
 
 	default:
 		// Fall back to default conversion for standard types
@@ -92,11 +103,6 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 func (m *mySQLTypeConverter) ConvertSQLToArrow(sqlValue any, field *arrow.Field) (any, error) {
 	// Handle MySQL-specific type conversions
 	switch field.Type.(type) {
-	case *arrow.TimestampType:
-		// MySQL TIMESTAMP is timezone-aware, but let the default converter handle the actual conversion
-		// The default converter now properly handles []byte to time.Time conversion
-		return m.DefaultTypeConverter.ConvertSQLToArrow(sqlValue, field)
-
 	case *arrow.StringType:
 		// Handle MySQL JSON types specially
 		if isJSON, ok := field.Metadata.GetValue("mysql.is_json"); ok && isJSON == "true" {
@@ -166,25 +172,19 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		// Fall through to default binary handling
 		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
 
-	case *array.Timestamp:
-		// For timestamp arrays, check if they need timezone conversion
-		timestampType := a.DataType().(*arrow.TimestampType)
-		value := a.Value(index)
+	case *array.Time32:
+		// For MySQL driver, always convert Time32 arrays to time-only format strings
+		// This handles both explicit TIME column metadata and parameter binding scenarios
+		timeType := a.DataType().(*arrow.Time32Type)
+		t := a.Value(index).ToTime(timeType.Unit)
+		return t.Format("15:04:05.000000"), nil
 
-		// Check if this is a MySQL TIMESTAMP vs DATETIME
-		if dbType, ok := field.Metadata.GetValue("sql.database_type_name"); ok {
-			if strings.ToUpper(dbType) == "TIMESTAMP" {
-				// MySQL TIMESTAMP - ensure proper timezone handling
-				time := value.ToTime(timestampType.Unit)
-				// If the timestamp type has no timezone, assume UTC for MySQL TIMESTAMP
-				if timestampType.TimeZone == "" {
-					time = time.UTC()
-				}
-				return time, nil
-			}
-		}
-		// Fall through to default timestamp handling
-		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
+	case *array.Time64:
+		// For MySQL driver, always convert Time64 arrays to time-only format strings
+		// This handles both explicit TIME column metadata and parameter binding scenarios
+		timeType := a.DataType().(*arrow.Time64Type)
+		t := a.Value(index).ToTime(timeType.Unit)
+		return t.Format("15:04:05.000000"), nil
 
 	default:
 		// For all other types, use default conversion

@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-skip = "Cannot select an INT literal as we cannot CAST to INT"
+hide = true

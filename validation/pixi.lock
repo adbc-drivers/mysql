@@ -40,11 +40,12 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.14.1-pyhe01879c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025b-h78e105d_0.conda
       - pypi: https://files.pythonhosted.org/packages/d3/49/b5e260deff3d218a17fe23a1313bb3c033d846bf74505c297f74d2c8abfe/adbc_driver_manager-1.6.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/99/37/e8730c3587a65eb5645d4aba2d27aae48e8003614d6aaf15dda67f702f1f/bidict-0.23.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/90/a6/c8577b741974f106e24f8eb3efedc399be1a23cbbdcf49dd4bea5bb8aa4e/duckdb-1.3.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0c/91/96cf928db8236f1bfab6ce15ad070dfdd02ed88261c2afafd4b43575e9e9/MarkupSafe-3.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/be/27/43a47fa0ff9053ab5203bb3faeec435d43c0d8bfa40179bfd076cdbd4e1c/pyarrow-20.0.0-cp313-cp313-manylinux_2_28_x86_64.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=38c2e51a0b028910cbdaae394f293250de0d8cc7#38c2e51a0b028910cbdaae394f293250de0d8cc7
+      - pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=c7a033e80a8bd9906c4b54e4f75358a5ac844483#c7a033e80a8bd9906c4b54e4f75358a5ac844483
       - pypi: https://files.pythonhosted.org/packages/c7/61/b5e123dd98e90caeedd8ed3ede06b52ca0e18d8d16dfad8133c954702451/whenever-0.8.8-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -81,17 +82,23 @@ packages:
   - pyarrow>=14.0.1 ; extra == 'test'
   - pytest ; extra == 'test'
   requires_python: '>=3.9'
-- pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=38c2e51a0b028910cbdaae394f293250de0d8cc7#38c2e51a0b028910cbdaae394f293250de0d8cc7
+- pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=c7a033e80a8bd9906c4b54e4f75358a5ac844483#c7a033e80a8bd9906c4b54e4f75358a5ac844483
   name: adbc-drivers-validation
   version: '0.1'
   requires_dist:
   - adbc-driver-manager>=1.6.0,<2
+  - bidict>=0.23.1,<1.0.0
   - duckdb>=1.3.1,<2
   - jinja2>=3.1.6,<4
   - pyarrow>=20.0.0,<21
   - pytest>=8.4.1,<9
   - whenever>=0.8.8,<0.9
   requires_python: '>=3.13'
+- pypi: https://files.pythonhosted.org/packages/99/37/e8730c3587a65eb5645d4aba2d27aae48e8003614d6aaf15dda67f702f1f/bidict-0.23.1-py3-none-any.whl
+  name: bidict
+  version: 0.23.1
+  sha256: 5dae8d4d79b552a71cbabc7deb25dfe8ce710b17ff41711e13010ead2abfc3e5
+  requires_python: '>=3.8'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-h4bc722e_7.conda
   sha256: 5ced96500d945fb286c9c838e54fa759aa04a7129c59800f0846b4335cee770d
   md5: 62ee74e96c5ebb0af99386de58cf9553
