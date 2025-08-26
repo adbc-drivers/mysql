@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025 Columnar Technologies, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,20 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Dev
+[workspace]
+authors = ["ADBC Drivers Contributors"]
+channels = ["conda-forge"]
+name = "build"
+platforms = ["linux-64", "osx-arm64", "win-64", "linux-aarch64"]
+version = "0.1.0"
 
-on:
-  pull_request: {}
-  push:
-    branches:
-      - main
+[tasks]
+make = "adbc-make run build DRIVER=mysql VERBOSE=true"
+release = "adbc-release"
 
-permissions:
-  contents: read
+[dependencies]
+python = ">=3.13.5,<3.14"
 
-jobs:
-  lint:
-    uses: adbc-drivers/dev/.github/workflows/dev.yaml@4a9fa7fd9f84de24c71ba586920a0cc8a3a44c90
-    secrets:
-      pre_commit_ssh_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
-      ssh_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
+[pypi-dependencies]
+adbc-drivers-dev = { git = "ssh://git@github.com/adbc-drivers/dev", rev = "51ef7d7a3b06e557fb3067773d24df0e30599f7f" }

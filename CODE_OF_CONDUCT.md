@@ -14,4 +14,4 @@
   limitations under the License.
 -->
 
-# Validation Suite Setup
+# ADBC Driver Foundry Code of Conduct
