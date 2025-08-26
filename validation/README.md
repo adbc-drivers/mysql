@@ -14,20 +14,21 @@
   limitations under the License.
 -->
 
-# ADBC Driver for MySQL
+# Validation Suite Setup
 
-Not affiliated with MySQL or Oracle.
+1. Start the Docker container:
 
-An [ADBC driver](https://arrow.apache.org/adbc/) for MySQL.
+   ```shell
+   docker compose up --detach --wait
+   ```
+2. Set the environment variable:
 
-## Installation
+   ```shell
+   export MYSQL_DSN="my:password@tcp(localhost:3306)/db"
+   ```
+3. Run the tests:
 
-Drivers can be installed with `dbc`.
-
-## Building
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+   ```shell
+   cd validation
+   pixi run test
+   ```

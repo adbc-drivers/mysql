@@ -1,3 +1,4 @@
+---
 # Copyright (c) 2025 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,33 +12,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+{}
+---
 
-ifeq ($(shell go env GOOS), linux)
-	RM=rm -f
-	PREFIX=lib
-	SUFFIX=so
-else ifeq ($(shell go env GOOS), darwin)
-	RM=rm -f
-	PREFIX=lib
-	SUFFIX=dylib
-else ifeq ($(shell go env GOOS), windows)
-	RM=del
-	PREFIX=
-	SUFFIX=dll
-else
-	$(error Unsupported OS)
-endif
+{{ cross_reference|safe }}
+# MySQL Driver {{ version }}
 
-DRIVERS := \
-	libadbc_driver_mysql.$(SUFFIX)
+{{ version_header|safe }}
 
-.PHONY: all clean
-all: $(DRIVERS)
+This driver provides access to [MySQL][mysql]{target="_blank"}, a free and
+open-source relational database management system.
 
-clean:
-	$(RM) $(DRIVERS)
+## Installation & Quickstart
 
-libadbc_driver_mysql.$(SUFFIX): $(wildcard *.go pkg/*.go pkg/*.c pkg/%.h) go.mod go.sum
-	go build -C ./pkg -o ../$@ -buildmode=c-shared -tags driverlib -ldflags "-s -w" .
-	-$(RM) ./$(basename $@).h
-	chmod 755 $@
+The driver can be installed with `dbc`.
+
+To use the driver, provide the MySQL DSN as the `url` option.
+
+## Feature & Type Support
+{{ features|safe }}
+
+### Types
+{{ types|safe }}
+
+[mysql]: https://www.mysql.com/

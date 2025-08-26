@@ -14,6 +14,7 @@
 
 .github/pull_request_template.md
 go.sum
+pixi.lock
 validation/pixi.lock
 validation/queries/*/*.json
 validation/queries/*/*.sql
