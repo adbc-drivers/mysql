@@ -12,20 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-[workspace]
-authors = ["ADBC Drivers Contributors"]
-channels = ["conda-forge"]
-name = "validation"
-platforms = ["linux-64"]
-version = "0.1.0"
-
-[tasks]
-test = "pytest -vvs --junit-xml=validation-report.xml -rfEsxX tests/"
-gendocs = "python -m tests.generate_documentation"
-
-[dependencies]
-python = ">=3.13,<4"
-pytest-lazy-fixtures = ">=1.3.2,<2"
-
-[pypi-dependencies]
-adbc-drivers-validation = { git = "ssh://git@github.com/adbc-drivers/validation", rev = "c7a033e80a8bd9906c4b54e4f75358a5ac844483" }
+[tags]
+sql-type-name = "TIMESTAMP"
