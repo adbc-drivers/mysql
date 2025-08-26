@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   test:
-    uses: adbc-drivers/dev/.github/workflows/test.yaml@4a9fa7fd9f84de24c71ba586920a0cc8a3a44c90
+    uses: adbc-drivers/dev/.github/workflows/test.yaml@9b923aaf352c993a4587327e032e50931d79d177
     secrets:
       dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
       driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
@@ -36,7 +36,7 @@ jobs:
       subdir: .
 
   validate:
-    uses: adbc-drivers/dev/.github/workflows/validate.yaml@4a9fa7fd9f84de24c71ba586920a0cc8a3a44c90
+    uses: adbc-drivers/dev/.github/workflows/validate.yaml@9b923aaf352c993a4587327e032e50931d79d177
     secrets:
       dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
       driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}

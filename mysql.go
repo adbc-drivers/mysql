@@ -197,5 +197,9 @@ func NewDriver(alloc memory.Allocator) adbc.Driver {
 	typeConverter := &mySQLTypeConverter{
 		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{},
 	}
-	return sqlwrapper.NewDriver(alloc, "mysql", "MySQL", typeConverter)
+	driver := sqlwrapper.NewDriver(alloc, "mysql", "MySQL", typeConverter)
+	if err := driver.DriverInfo.RegisterInfoCode(adbc.InfoDriverName, "ADBC Driver Foundry Driver for MySQL"); err != nil {
+		panic(err)
+	}
+	return driver
 }
