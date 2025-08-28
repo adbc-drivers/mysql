@@ -22,7 +22,12 @@ An [ADBC driver](https://arrow.apache.org/adbc/) for MySQL.
 
 ## Installation
 
-Drivers can be installed with `dbc`.
+Pre-packaged builds of the drivers in this repo have been made available for
+various platforms from the [Columnar](https://columnar.tech) CDN. These can be
+installed by any tool that supports [ADBC](https://arrow.apache.org/adbc/)
+Driver Manifests, such as [dbc](https://columnar.tech/dbc).
+
+See [Building](#building) if you would rather build the drivers yourself.
 
 ## Building
 
