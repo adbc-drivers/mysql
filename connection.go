@@ -34,8 +34,7 @@ func (c *mysqlConnectionImpl) GetCurrentCatalog() (string, error) {
 
 // GetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) GetCurrentDbSchema() (string, error) {
-	// In MySQL, catalog and schema are the same
-	return c.GetCurrentCatalog()
+	return "", nil
 }
 
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
@@ -46,6 +45,8 @@ func (c *mysqlConnectionImpl) SetCurrentCatalog(catalog string) error {
 
 // SetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) SetCurrentDbSchema(schema string) error {
-	// In MySQL, catalog and schema are the same
-	return c.SetCurrentCatalog(schema)
+	if schema != "" {
+		return fmt.Errorf("cannot set schema in MySQL: schemas are not supported")
+	}
+	return nil
 }

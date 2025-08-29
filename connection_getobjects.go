@@ -19,23 +19,27 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
 )
 
 func (c *mysqlConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *string) ([]string, error) {
-	query := `SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA`
+	// In MySQL JDBC, getCatalogs() returns database names (catalogs are databases)
+	// Build query using strings.Builder
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA")
 	args := []any{}
 
 	if catalogFilter != nil {
-		query += ` WHERE SCHEMA_NAME LIKE ?`
+		queryBuilder.WriteString(" WHERE SCHEMA_NAME LIKE ?")
 		args = append(args, *catalogFilter)
 	}
 
-	query += ` ORDER BY SCHEMA_NAME`
+	queryBuilder.WriteString(" ORDER BY SCHEMA_NAME")
 
-	rows, err := c.Db.QueryContext(ctx, query, args...)
+	rows, err := c.Db.QueryContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query catalogs: %w", err)
 	}
@@ -60,32 +64,23 @@ func (c *mysqlConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *st
 }
 
 func (c *mysqlConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalog string, schemaFilter *string) ([]string, error) {
-	// In MySQL, catalog and schema are the same concept (database name)
-	// Since there are no sub-schemas within a MySQL database, we return the database itself as the schema
-	// if it exists and matches the filter
+	// In MySQL JDBC, getSchemas() returns empty - schemas are not supported
+	// For ADBC GetObjects, we return empty string as schema to maintain the hierarchy
+	// This allows: catalog (db name) -> schema ("") -> tables
 
-	// Build query to check if catalog exists and optionally apply filter
-	query := "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?"
-	args := []any{catalog}
-
-	// Apply schema filter if provided (using SQL LIKE for consistency with GetCatalogs)
+	// Apply schema filter - only empty string matches our single schema
 	if schemaFilter != nil {
-		query += " AND SCHEMA_NAME LIKE ?"
-		args = append(args, *schemaFilter)
-	}
-
-	var schemaName string
-	err := c.Db.QueryRowContext(ctx, query, args...).Scan(&schemaName)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return []string{}, nil // Catalog doesn't exist or doesn't match filter
+		matches, err := filepath.Match(*schemaFilter, "")
+		if err != nil {
+			return nil, fmt.Errorf("invalid schema filter pattern: %w", err)
 		}
-		return nil, fmt.Errorf("failed to check catalog existence: %w", err)
+		if !matches {
+			return []string{}, nil // Schema filter doesn't match empty string
+		}
 	}
 
-	// Return the catalog name as the schema since they're the same in MySQL
-	return []string{schemaName}, nil
+	// Return empty string as the single schema for this catalog
+	return []string{""}, nil
 }
 
 func (c *mysqlConnectionImpl) GetTablesForDBSchema(ctx context.Context, catalog string, schema string, tableFilter *string, columnFilter *string, includeColumns bool) ([]driverbase.TableInfo, error) {
@@ -97,30 +92,32 @@ func (c *mysqlConnectionImpl) GetTablesForDBSchema(ctx context.Context, catalog 
 
 // getTablesOnly retrieves table information without columns
 func (c *mysqlConnectionImpl) getTablesOnly(ctx context.Context, catalog string, schema string, tableFilter *string) ([]driverbase.TableInfo, error) {
-	// In MySQL, catalog and schema must be the same (database name)
-	if catalog != schema {
-		return nil, fmt.Errorf("in MySQL, catalog must equal schema (got catalog=%s, schema=%s)", catalog, schema)
+	// In MySQL JDBC, catalog is the database name and schema should be empty
+	if schema != "" {
+		return []driverbase.TableInfo{}, nil // No tables for non-empty schemas
 	}
 
-	query := `
+	// Build query using strings.Builder
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString(`
 		SELECT
 			TABLE_NAME,
 			TABLE_TYPE
 		FROM INFORMATION_SCHEMA.TABLES
-		WHERE TABLE_SCHEMA = ?`
+		WHERE TABLE_SCHEMA = ?`)
 
-	args := []any{schema}
+	args := []any{catalog}
 
 	if tableFilter != nil {
-		query += ` AND TABLE_NAME LIKE ?`
+		queryBuilder.WriteString(` AND TABLE_NAME LIKE ?`)
 		args = append(args, *tableFilter)
 	}
 
-	query += ` ORDER BY TABLE_NAME`
+	queryBuilder.WriteString(` ORDER BY TABLE_NAME`)
 
-	rows, err := c.Db.QueryContext(ctx, query, args...)
+	rows, err := c.Db.QueryContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tables for schema %s: %w", schema, err)
+		return nil, fmt.Errorf("failed to query tables for catalog %s: %w", catalog, err)
 	}
 	defer func() {
 		err = errors.Join(err, rows.Close())
@@ -148,9 +145,9 @@ func (c *mysqlConnectionImpl) getTablesOnly(ctx context.Context, catalog string,
 
 // getTablesWithColumns retrieves complete table and column information
 func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog string, schema string, tableFilter *string, columnFilter *string) ([]driverbase.TableInfo, error) {
-	// In MySQL, catalog and schema must be the same (database name)
-	if catalog != schema {
-		return nil, fmt.Errorf("in MySQL, catalog must equal schema (got catalog=%s, schema=%s)", catalog, schema)
+	// In MySQL JDBC, catalog is the database name and schema should be empty
+	if schema != "" {
+		return []driverbase.TableInfo{}, nil // No tables for non-empty schemas
 	}
 
 	type tableColumn struct {
@@ -164,7 +161,9 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		ColumnDefault   sql.NullString
 	}
 
-	query := `
+	// Build query using strings.Builder
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString(`
 		SELECT
 			t.TABLE_NAME,
 			t.TABLE_TYPE,
@@ -178,24 +177,24 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		INNER JOIN INFORMATION_SCHEMA.COLUMNS c
 			ON t.TABLE_SCHEMA = c.TABLE_SCHEMA
 			AND t.TABLE_NAME = c.TABLE_NAME
-		WHERE t.TABLE_SCHEMA = ?`
+		WHERE t.TABLE_SCHEMA = ?`)
 
-	args := []any{schema}
+	args := []any{catalog}
 
 	if tableFilter != nil {
-		query += ` AND t.TABLE_NAME LIKE ?`
+		queryBuilder.WriteString(` AND t.TABLE_NAME LIKE ?`)
 		args = append(args, *tableFilter)
 	}
 	if columnFilter != nil {
-		query += ` AND c.COLUMN_NAME LIKE ?`
+		queryBuilder.WriteString(` AND c.COLUMN_NAME LIKE ?`)
 		args = append(args, *columnFilter)
 	}
 
-	query += ` ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION`
+	queryBuilder.WriteString(` ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION`)
 
-	rows, err := c.Db.QueryContext(ctx, query, args...)
+	rows, err := c.Db.QueryContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tables with columns for schema %s: %w", schema, err)
+		return nil, fmt.Errorf("failed to query tables with columns for catalog %s: %w", catalog, err)
 	}
 	defer func() {
 		err = errors.Join(err, rows.Close())

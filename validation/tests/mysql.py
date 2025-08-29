@@ -35,8 +35,8 @@ class MySQLQuirks(model.DriverQuirks):
         statement_bulk_ingest_temporary=False,
         statement_execute_schema=False,
         statement_get_parameter_schema=False,
-        current_catalog="db",  # MySQL DB name (from Dockerfile) used as catalog/schema
-        current_schema="db",
+        current_catalog="db",  # MySQL treats databases as catalogs (also JDBC behavior)
+        current_schema="",  # getSchemas() returns empty - no schema concept (also JDBC behavior)
         supported_xdbc_fields=[],
     )
     setup = model.DriverSetup(
