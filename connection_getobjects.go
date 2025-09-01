@@ -25,7 +25,7 @@ import (
 	"github.com/adbc-drivers/driverbase-go/driverbase"
 )
 
-func (c *mysqlConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *string) ([]string, error) {
+func (c *mysqlConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *string) (catalogs []string, err error) {
 	// In MySQL JDBC, getCatalogs() returns database names (catalogs are databases)
 	// Build query using strings.Builder
 	var queryBuilder strings.Builder
@@ -47,7 +47,7 @@ func (c *mysqlConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *st
 		err = errors.Join(err, rows.Close())
 	}()
 
-	catalogs := make([]string, 0)
+	catalogs = make([]string, 0)
 	for rows.Next() {
 		var catalog string
 		if err := rows.Scan(&catalog); err != nil {
@@ -60,10 +60,10 @@ func (c *mysqlConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *st
 		return nil, fmt.Errorf("error during catalog iteration: %w", err)
 	}
 
-	return catalogs, nil
+	return catalogs, err
 }
 
-func (c *mysqlConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalog string, schemaFilter *string) ([]string, error) {
+func (c *mysqlConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalog string, schemaFilter *string) (schemas []string, err error) {
 	// In MySQL JDBC, getSchemas() returns empty - schemas are not supported
 	// For ADBC GetObjects, we return empty string as schema to maintain the hierarchy
 	// This allows: catalog (db name) -> schema ("") -> tables
@@ -83,7 +83,7 @@ func (c *mysqlConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalo
 	return []string{""}, nil
 }
 
-func (c *mysqlConnectionImpl) GetTablesForDBSchema(ctx context.Context, catalog string, schema string, tableFilter *string, columnFilter *string, includeColumns bool) ([]driverbase.TableInfo, error) {
+func (c *mysqlConnectionImpl) GetTablesForDBSchema(ctx context.Context, catalog string, schema string, tableFilter *string, columnFilter *string, includeColumns bool) (tables []driverbase.TableInfo, err error) {
 	if includeColumns {
 		return c.getTablesWithColumns(ctx, catalog, schema, tableFilter, columnFilter)
 	}
@@ -91,7 +91,7 @@ func (c *mysqlConnectionImpl) GetTablesForDBSchema(ctx context.Context, catalog 
 }
 
 // getTablesOnly retrieves table information without columns
-func (c *mysqlConnectionImpl) getTablesOnly(ctx context.Context, catalog string, schema string, tableFilter *string) ([]driverbase.TableInfo, error) {
+func (c *mysqlConnectionImpl) getTablesOnly(ctx context.Context, catalog string, schema string, tableFilter *string) (tables []driverbase.TableInfo, err error) {
 	// In MySQL JDBC, catalog is the database name and schema should be empty
 	if schema != "" {
 		return []driverbase.TableInfo{}, nil // No tables for non-empty schemas
@@ -123,7 +123,7 @@ func (c *mysqlConnectionImpl) getTablesOnly(ctx context.Context, catalog string,
 		err = errors.Join(err, rows.Close())
 	}()
 
-	tables := make([]driverbase.TableInfo, 0)
+	tables = make([]driverbase.TableInfo, 0)
 	for rows.Next() {
 		var tableName, tableType string
 		if err := rows.Scan(&tableName, &tableType); err != nil {
@@ -140,11 +140,11 @@ func (c *mysqlConnectionImpl) getTablesOnly(ctx context.Context, catalog string,
 		return nil, fmt.Errorf("error during table iteration: %w", err)
 	}
 
-	return tables, nil
+	return tables, err
 }
 
 // getTablesWithColumns retrieves complete table and column information
-func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog string, schema string, tableFilter *string, columnFilter *string) ([]driverbase.TableInfo, error) {
+func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog string, schema string, tableFilter *string, columnFilter *string) (tables []driverbase.TableInfo, err error) {
 	// In MySQL JDBC, catalog is the database name and schema should be empty
 	if schema != "" {
 		return []driverbase.TableInfo{}, nil // No tables for non-empty schemas
@@ -200,7 +200,7 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		err = errors.Join(err, rows.Close())
 	}()
 
-	tables := make([]driverbase.TableInfo, 0)
+	tables = make([]driverbase.TableInfo, 0)
 	var currentTable *driverbase.TableInfo
 
 	for rows.Next() {
@@ -281,5 +281,5 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 
 	// TODO: Add constraint and foreign key metadata support
 
-	return tables, nil
+	return tables, err
 }
