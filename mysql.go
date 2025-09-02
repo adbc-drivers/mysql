@@ -213,6 +213,10 @@ func (f *mysqlConnectionFactory) CreateConnection(
 	ctx context.Context,
 	conn *sqlwrapper.ConnectionImpl,
 ) (driverbase.ConnectionImpl, error) {
+	// Set up MySQL-specific bulk ingest factory
+	bulkIngestFactory := &mysqlBulkIngestFactory{}
+	conn.SetBulkIngestImplFactory(bulkIngestFactory)
+	
 	// Wrap the pre-built sqlwrapper connection with MySQL-specific functionality
 	return &mysqlConnectionImpl{
 		ConnectionImpl: conn,
