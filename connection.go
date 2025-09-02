@@ -70,11 +70,9 @@ func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes [
 }
 
 // ExecuteBulkIngest performs MySQL bulk ingest using INSERT statements
-// TODO: Track and return actual row count once interface supports (int64, error) return type.
-// Currently returns no row count information due to interface limitation.
-func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *driverbase.BulkIngestOptions, stream array.RecordReader) (err error) {
+func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	if stream == nil {
-		return fmt.Errorf("stream cannot be nil")
+		return -1, c.Base().ErrorHelper.InvalidArgument("stream cannot be nil")
 	}
 
 	tableName := "target_table"
@@ -83,6 +81,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *dr
 	}
 
 	var tableCreated bool
+	var totalRowsInserted int64
 
 	// Process each record batch in the stream
 	for stream.Next() {
@@ -92,7 +91,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *dr
 		// Create table if needed (only on first batch)
 		if !tableCreated {
 			if err := c.createTableIfNeeded(ctx, tableName, schema, options); err != nil {
-				return fmt.Errorf("failed to create table: %w", err)
+				return -1, c.Base().ErrorHelper.IO("failed to create table: %v", err)
 			}
 			tableCreated = true
 		}
@@ -110,14 +109,15 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *dr
 		// Prepare the statement
 		stmt, err := c.Conn.PrepareContext(ctx, insertSQL)
 		if err != nil {
-			return fmt.Errorf("failed to prepare insert statement: %w", err)
+			return -1, c.Base().ErrorHelper.IO("failed to prepare insert statement: %v", err)
 		}
 		defer func() {
 			err = errors.Join(err, stmt.Close())
 		}()
 
 		// Insert each row
-		for rowIdx := 0; rowIdx < int(record.NumRows()); rowIdx++ {
+		rowsInBatch := int(record.NumRows())
+		for rowIdx := 0; rowIdx < rowsInBatch; rowIdx++ {
 			params := make([]any, record.NumCols())
 
 			for colIdx := 0; colIdx < int(record.NumCols()); colIdx++ {
@@ -127,7 +127,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *dr
 				// Use type converter to get Go value
 				value, err := c.TypeConverter.ConvertArrowToGo(arr, rowIdx, &field)
 				if err != nil {
-					return fmt.Errorf("failed to convert value at row %d, col %d: %w", rowIdx, colIdx, err)
+					return -1, c.Base().ErrorHelper.IO("failed to convert value at row %d, col %d: %v", rowIdx, colIdx, err)
 				}
 				params[colIdx] = value
 			}
@@ -135,17 +135,20 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *dr
 			// Execute the insert
 			_, err := stmt.ExecContext(ctx, params...)
 			if err != nil {
-				return fmt.Errorf("failed to execute insert: %w", err)
+				return -1, c.Base().ErrorHelper.IO("failed to execute insert: %v", err)
 			}
 		}
+
+		// Track rows inserted in this batch
+		totalRowsInserted += int64(rowsInBatch)
 	}
 
 	// Check for stream errors
 	if err := stream.Err(); err != nil {
-		return fmt.Errorf("stream error: %w", err)
+		return -1, c.Base().ErrorHelper.IO("stream error: %v", err)
 	}
 
-	return nil
+	return totalRowsInserted, nil
 }
 
 // createTableIfNeeded creates the table based on the ingest mode
