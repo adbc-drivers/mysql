@@ -197,6 +197,8 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 // mysqlConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
 type mysqlConnectionImpl struct {
 	*sqlwrapper.ConnectionImpl // Embed sqlwrapper connection for all standard functionality
+
+	version string
 }
 
 // implements DbObjectsEnumerator interface

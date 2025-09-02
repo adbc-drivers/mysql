@@ -22,7 +22,7 @@ class MySQLQuirks(model.DriverQuirks):
     driver = "adbc_driver_mysql"
     driver_name = "ADBC Driver Foundry Driver for MySQL"
     vendor_name = "MySQL"
-    vendor_version = "9.4.0-1.el9"
+    vendor_version = "9.4.0 (MySQL Community Server - GPL)"
     short_version = "9.4"
     features = model.DriverFeatures(
         connection_get_table_schema=False,
