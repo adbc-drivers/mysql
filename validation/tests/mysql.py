@@ -57,5 +57,9 @@ class MySQLQuirks(model.DriverQuirks):
     def is_table_not_found(self, table_name: str, error: Exception) -> bool:
         raise error
 
+    def quote_one_identifier(self, identifier: str) -> str:
+        identifier = identifier.replace("`", "``")
+        return f"`{identifier}`"
+
     def split_statement(self, statement: str) -> list[str]:
         return quirks.split_statement(statement)
