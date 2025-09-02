@@ -1,16 +1,9 @@
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
-<<<<<<< HEAD
-github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250829042004-8c5a40a2a05c h1:kFdnxRjN/9GpffJqsoFjo09TUx2kOc3nujJjHpddIH8=
-github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250829042004-8c5a40a2a05c/go.mod h1:J8OlxauTt/3RA2p3gRxm9MFvtsFz3jQyUAjOSRGAgJM=
-github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250829042004-8c5a40a2a05c h1:Pmjhkc+ZpCBR8Fr9S9unDKeGFITTPbz9MqUI1VQi7uU=
-github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250829042004-8c5a40a2a05c/go.mod h1:ikaJlHuzj7yNwBaBawWOZiiFM1dx7pLwcsWUIRDXmos=
-=======
 github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250902013152-2511d884097d h1:ndmQavR5rl7Oqtp7G0fXtsAdKkWOaYe7J1JoCOIcqBU=
 github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250902013152-2511d884097d/go.mod h1:J8OlxauTt/3RA2p3gRxm9MFvtsFz3jQyUAjOSRGAgJM=
 github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250902013152-2511d884097d h1:mZmZe6sCGR4H3h1/MotjCu5EEMDmda918LhqnLCS04Q=
 github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250902013152-2511d884097d/go.mod h1:ikaJlHuzj7yNwBaBawWOZiiFM1dx7pLwcsWUIRDXmos=
->>>>>>> main
 github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250829042004-8c5a40a2a05c h1:qDXLND2bhprpgvL6hCF8itmkUo+Oop/wagu9q7Z/nh8=
 github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250829042004-8c5a40a2a05c/go.mod h1:kJ+9YBXwicVHhK05zLafFD1bOP3k+LArcp+L959YKYw=
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
@@ -74,13 +67,8 @@ github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR
 github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWNMNyH2VO9fmH0o=
 github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=
 github.com/stretchr/objx v0.5.2/go.mod h1:FRsXN1f5AsAjCGJKqEizvkpNtU+EGNCLh3NxZ/8L+MA=
-<<<<<<< HEAD
-github.com/stretchr/testify v1.11.0 h1:ib4sjIrwZKxE5u/Japgo/7SJV3PvgjGiRNAvTVGqQl8=
-github.com/stretchr/testify v1.11.0/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-=======
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
->>>>>>> main
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
 github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=

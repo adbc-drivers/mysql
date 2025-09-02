@@ -218,7 +218,7 @@ func (f *mysqlConnectionFactory) CreateConnection(
 	// Set up MySQL-specific bulk ingest factory
 	bulkIngestFactory := &mysqlBulkIngestFactory{}
 	conn.SetBulkIngestImplFactory(bulkIngestFactory)
-	
+
 	// Wrap the pre-built sqlwrapper connection with MySQL-specific functionality
 	return &mysqlConnectionImpl{
 		ConnectionImpl: conn,

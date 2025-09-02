@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -54,41 +55,44 @@ func (m *mysqlTempFile) Rows() int64 {
 	return m.rows
 }
 
-
 // CreateSink creates a sink for storing Parquet data
-func (impl *mysqlBulkIngestImpl) CreateSink(ctx context.Context, options *driverbase.BulkIngestOptions) (driverbase.BulkIngestSink, error) {
+func (impl *mysqlBulkIngestImpl) CreateSink(ctx context.Context, options *driverbase.BulkIngestOptions) (sink driverbase.BulkIngestSink, err error) {
 	// Use driverbase's in-memory buffer sink to avoid file handle issues
 	return &driverbase.BufferBulkIngestSink{}, nil
 }
 
 // Upload for MySQL writes the buffer data to a temporary file
-func (impl *mysqlBulkIngestImpl) Upload(ctx context.Context, chunk driverbase.BulkIngestPendingUpload) (driverbase.BulkIngestPendingCopy, error) {
+func (impl *mysqlBulkIngestImpl) Upload(ctx context.Context, chunk driverbase.BulkIngestPendingUpload) (pendingCopy driverbase.BulkIngestPendingCopy, err error) {
 	// Get the buffer data
 	sink := chunk.Data.(*driverbase.BufferBulkIngestSink)
-	
+
 	// Write buffer to temporary file
 	tempFile, err := os.CreateTemp("", "mysql_bulk_*.parquet")
 	if err != nil {
 		return nil, impl.errorHelper.IO("failed to create temp file: %v", err)
 	}
-	
+
 	// Write the buffer content to the file
 	if _, err := tempFile.Write(sink.Bytes()); err != nil {
-		tempFile.Close()
+		defer func() {
+			err = errors.Join(err, tempFile.Close())
+		}()
 		return nil, impl.errorHelper.IO("failed to write to temp file: %v", err)
 	}
-	
+
 	// Ensure data is written to disk before closing
 	if err := tempFile.Sync(); err != nil {
-		tempFile.Close()
+		defer func() {
+			err = errors.Join(err, tempFile.Close())
+		}()
 		return nil, impl.errorHelper.IO("failed to sync temp file: %v", err)
 	}
-	
+
 	// Close the file so it can be read later
 	if err := tempFile.Close(); err != nil {
 		return nil, impl.errorHelper.IO("failed to close temp file: %v", err)
 	}
-	
+
 	return &mysqlTempFile{
 		filePath: tempFile.Name(),
 		rows:     chunk.Rows,
@@ -96,26 +100,26 @@ func (impl *mysqlBulkIngestImpl) Upload(ctx context.Context, chunk driverbase.Bu
 }
 
 // CreateTable creates the target table based on Arrow schema
-func (impl *mysqlBulkIngestImpl) CreateTable(ctx context.Context, schema *arrow.Schema, ifTableExists driverbase.BulkIngestTableExistsBehavior, ifTableMissing driverbase.BulkIngestTableMissingBehavior) error {
+func (impl *mysqlBulkIngestImpl) CreateTable(ctx context.Context, schema *arrow.Schema, ifTableExists driverbase.BulkIngestTableExistsBehavior, ifTableMissing driverbase.BulkIngestTableMissingBehavior) (err error) {
 	stmt, err := impl.createTableStatement(schema, ifTableExists, ifTableMissing)
 	if err != nil {
 		return err
 	}
-	
+
 	if stmt != "" {
 		_, err := impl.conn.ExecContext(ctx, stmt)
 		if err != nil {
 			return impl.errorHelper.IO("failed to create table: %v", err)
 		}
 	}
-	
+
 	return nil
 }
 
 // createTableStatement generates MySQL CREATE TABLE DDL from Arrow schema
-func (impl *mysqlBulkIngestImpl) createTableStatement(schema *arrow.Schema, ifTableExists driverbase.BulkIngestTableExistsBehavior, ifTableMissing driverbase.BulkIngestTableMissingBehavior) (string, error) {
+func (impl *mysqlBulkIngestImpl) createTableStatement(schema *arrow.Schema, ifTableExists driverbase.BulkIngestTableExistsBehavior, ifTableMissing driverbase.BulkIngestTableMissingBehavior) (statement string, err error) {
 	var b strings.Builder
-	
+
 	// Handle table existence behavior
 	switch ifTableExists {
 	case driverbase.BulkIngestTableExistsError:
@@ -131,7 +135,7 @@ func (impl *mysqlBulkIngestImpl) createTableStatement(schema *arrow.Schema, ifTa
 		b.WriteString(impl.quoteIdentifier(tableName))
 		b.WriteString("; ")
 	}
-	
+
 	// Handle table creation
 	switch ifTableMissing {
 	case driverbase.BulkIngestTableMissingError:
@@ -142,44 +146,44 @@ func (impl *mysqlBulkIngestImpl) createTableStatement(schema *arrow.Schema, ifTa
 		if ifTableExists == driverbase.BulkIngestTableExistsIgnore {
 			b.WriteString("IF NOT EXISTS ")
 		}
-		
+
 		tableName := "target_table"
 		if impl.options != nil && impl.options.TableName != "" {
 			tableName = impl.options.TableName
 		}
 		b.WriteString(impl.quoteIdentifier(tableName))
 		b.WriteString(" (")
-		
+
 		// Convert Arrow fields to MySQL columns
 		for i, field := range schema.Fields() {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			
+
 			b.WriteString(impl.quoteIdentifier(field.Name))
 			b.WriteString(" ")
-			
+
 			mysqlType, err := impl.arrowTypeToMySQL(&field)
 			if err != nil {
 				return "", err
 			}
 			b.WriteString(mysqlType)
-			
+
 			if !field.Nullable {
 				b.WriteString(" NOT NULL")
 			}
 		}
-		
+
 		b.WriteString(")")
 	}
-	
+
 	return b.String(), nil
 }
 
 // arrowTypeToMySQL converts Arrow data types to MySQL types, handling MySQL-specific metadata
-func (impl *mysqlBulkIngestImpl) arrowTypeToMySQL(field *arrow.Field) (string, error) {
+func (impl *mysqlBulkIngestImpl) arrowTypeToMySQL(field *arrow.Field) (mysqlType string, err error) {
 	arrowType := field.Type
-	
+
 	// Handle MySQL-specific types based on metadata first
 	switch arrowType.ID() {
 	case arrow.STRING:
@@ -187,14 +191,14 @@ func (impl *mysqlBulkIngestImpl) arrowTypeToMySQL(field *arrow.Field) (string, e
 		if isJSON, ok := field.Metadata.GetValue("mysql.is_json"); ok && isJSON == "true" {
 			return "JSON", nil
 		}
-		// Check for MySQL ENUM/SET columns  
+		// Check for MySQL ENUM/SET columns
 		if isEnumSet, ok := field.Metadata.GetValue("mysql.is_enum_set"); ok && isEnumSet == "true" {
 			if dbType, ok := field.Metadata.GetValue("sql.database_type_name"); ok {
 				return strings.ToUpper(dbType), nil // ENUM or SET
 			}
 		}
 		return "TEXT", nil
-		
+
 	case arrow.BINARY:
 		// Check for MySQL spatial columns
 		if isSpatial, ok := field.Metadata.GetValue("mysql.is_spatial"); ok && isSpatial == "true" {
@@ -205,7 +209,7 @@ func (impl *mysqlBulkIngestImpl) arrowTypeToMySQL(field *arrow.Field) (string, e
 		}
 		return "BLOB", nil
 	}
-	
+
 	// Handle standard Arrow types
 	switch arrowType.ID() {
 	case arrow.BOOL:
@@ -256,45 +260,47 @@ func (impl *mysqlBulkIngestImpl) quoteIdentifier(identifier string) string {
 }
 
 // Copy uses MySQL's LOAD DATA INFILE to bulk load data
-func (impl *mysqlBulkIngestImpl) Copy(ctx context.Context, chunk driverbase.BulkIngestPendingCopy) error {
+func (impl *mysqlBulkIngestImpl) Copy(ctx context.Context, chunk driverbase.BulkIngestPendingCopy) (err error) {
 	tempFile := chunk.(*mysqlTempFile)
-	
+
 	// Convert Parquet file to CSV
 	csvFile, err := impl.convertParquetToCSV(ctx, tempFile.filePath)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(csvFile) // Clean up original CSV file
-	
+	defer func() {
+		err = errors.Join(err, os.Remove(csvFile)) // Clean up original CSV file
+	}()
+
 	// For Docker setup, we need to copy the file to MySQL's secure directory
 	// Since we can't directly access the container filesystem, we'll still use LOCAL INFILE
 	// but with proper file registration for security
-	
+
 	// Register the file for LOAD DATA LOCAL INFILE
 	mysql.RegisterLocalFile(csvFile)
 	defer mysql.DeregisterLocalFile(csvFile)
-	
+
 	// Use LOAD DATA LOCAL INFILE to bulk load the CSV data (reads from client side)
 	loadSQL := fmt.Sprintf(`
 		LOAD DATA LOCAL INFILE '%s'
 		INTO TABLE %s
-		FIELDS TERMINATED BY ',' 
-		ENCLOSED BY '"' 
+		FIELDS TERMINATED BY ','
+		ENCLOSED BY '"'
 		LINES TERMINATED BY '\n'
 		IGNORE 1 ROWS`, // Skip CSV header row
 		csvFile,
 		impl.getTableName())
-	
+
 	_, err = impl.conn.ExecContext(ctx, loadSQL)
 	if err != nil {
 		return impl.errorHelper.IO("failed to execute LOAD DATA LOCAL INFILE: %v", err)
 	}
-	
+
 	return nil
 }
 
 // convertParquetToCSV converts a Parquet file to CSV format
-func (impl *mysqlBulkIngestImpl) convertParquetToCSV(ctx context.Context, parquetFile string) (string, error) {
+func (impl *mysqlBulkIngestImpl) convertParquetToCSV(ctx context.Context, parquetFile string) (csvFilePath string, err error) {
 	// Check if file exists and get its size for debugging
 	fileInfo, err := os.Stat(parquetFile)
 	if err != nil {
@@ -303,42 +309,46 @@ func (impl *mysqlBulkIngestImpl) convertParquetToCSV(ctx context.Context, parque
 	if fileInfo.Size() == 0 {
 		return "", impl.errorHelper.IO("Parquet file %s is empty (0 bytes)", parquetFile)
 	}
-	
+
 	// Open the Parquet file
 	parquetReader, err := file.OpenParquetFile(parquetFile, false)
 	if err != nil {
 		return "", impl.errorHelper.IO("failed to open Parquet file %s (size: %d bytes): %v", parquetFile, fileInfo.Size(), err)
 	}
-	defer parquetReader.Close()
-	
+	defer func() {
+		err = errors.Join(err, parquetReader.Close())
+	}()
+
 	// Create Arrow reader from Parquet
 	arrowReader, err := pqarrow.NewFileReader(parquetReader, pqarrow.ArrowReadProperties{}, nil)
 	if err != nil {
 		return "", impl.errorHelper.IO("failed to create Arrow reader from Parquet file %s: %v", parquetFile, err)
 	}
-	
+
 	// Check number of row groups for debugging
 	numRowGroups := arrowReader.ParquetReader().NumRowGroups()
 	if numRowGroups == 0 {
 		return "", impl.errorHelper.IO("Parquet file %s has no row groups", parquetFile)
 	}
-	
+
 	// Get the Arrow schema
 	arrowSchema, err := arrowReader.Schema()
 	if err != nil {
 		return "", impl.errorHelper.IO("failed to get Arrow schema: %v", err)
 	}
-	
+
 	// Create temporary CSV file
 	csvFile, err := os.CreateTemp("", "mysql_csv_*.csv")
 	if err != nil {
 		return "", impl.errorHelper.IO("failed to create CSV file: %v", err)
 	}
-	defer csvFile.Close()
-	
+	defer func() {
+		err = errors.Join(err, csvFile.Close())
+	}()
+
 	csvWriter := csv.NewWriter(csvFile)
 	defer csvWriter.Flush()
-	
+
 	// Write CSV header
 	header := make([]string, arrowSchema.NumFields())
 	for i, field := range arrowSchema.Fields() {
@@ -347,94 +357,94 @@ func (impl *mysqlBulkIngestImpl) convertParquetToCSV(ctx context.Context, parque
 	if err := csvWriter.Write(header); err != nil {
 		return "", impl.errorHelper.IO("failed to write CSV header: %v", err)
 	}
-	
+
 	// Try reading all data at once instead of streaming
 	table, err := arrowReader.ReadTable(ctx)
 	if err != nil {
 		return "", impl.errorHelper.IO("failed to read Parquet table from %s: %v", parquetFile, err)
 	}
 	defer table.Release()
-	
+
 	if table.NumRows() == 0 {
 		return "", impl.errorHelper.IO("Parquet file %s contains no rows", parquetFile)
 	}
-	
+
 	// Convert table to record batches
 	tableReader := array.NewTableReader(table, 0) // 0 = read all rows at once
 	defer tableReader.Release()
-	
+
 	recordCount := 0
 	totalRows := int64(0)
-	
+
 	for tableReader.Next() {
 		record := tableReader.Record()
 		recordCount++
 		numRows := record.NumRows()
 		totalRows += numRows
-		
+
 		// Convert each row in the record to CSV
 		for rowIdx := 0; rowIdx < int(numRows); rowIdx++ {
 			row := make([]string, record.NumCols())
-			
+
 			for colIdx := 0; colIdx < int(record.NumCols()); colIdx++ {
 				arr := record.Column(colIdx)
 				field := arrowSchema.Field(colIdx)
-				
+
 				// Use our type converter-based conversion
 				csvValue, err := impl.arrowValueToString(arr, rowIdx, &field)
 				if err != nil {
-					return "", impl.errorHelper.IO("failed to convert value at record %d, row %d, col %d (%s): %v", 
+					return "", impl.errorHelper.IO("failed to convert value at record %d, row %d, col %d (%s): %v",
 						recordCount, rowIdx, colIdx, field.Name, err)
 				}
 				row[colIdx] = csvValue
 			}
-			
+
 			if err := csvWriter.Write(row); err != nil {
 				return "", impl.errorHelper.IO("failed to write CSV row %d: %v", rowIdx, err)
 			}
 		}
 	}
-	
+
 	if err := tableReader.Err(); err != nil {
-		return "", impl.errorHelper.IO("error reading table records from %s (processed %d records, %d rows): %v", 
+		return "", impl.errorHelper.IO("error reading table records from %s (processed %d records, %d rows): %v",
 			parquetFile, recordCount, totalRows, err)
 	}
-	
+
 	return csvFile.Name(), nil
 }
 
 // arrowValueToString converts Arrow array values to CSV string format using type converter
-func (impl *mysqlBulkIngestImpl) arrowValueToString(arr arrow.Array, index int, field *arrow.Field) (string, error) {
+func (impl *mysqlBulkIngestImpl) arrowValueToString(arr arrow.Array, index int, field *arrow.Field) (csvValue string, err error) {
 	if arr.IsNull(index) {
 		return "\\N", nil // MySQL NULL representation in CSV
 	}
-	
+
 	// Use the type converter to get the Go value with MySQL-specific handling
 	goValue, err := impl.typeConverter.ConvertArrowToGo(arr, index, field)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Convert Go value to CSV string representation for MySQL
 	return impl.goValueToCSVString(goValue, field)
 }
 
 // goValueToCSVString converts a Go value to MySQL CSV string format
-func (impl *mysqlBulkIngestImpl) goValueToCSVString(value any, field *arrow.Field) (string, error) {
+func (impl *mysqlBulkIngestImpl) goValueToCSVString(value any, field *arrow.Field) (csvValue string, err error) {
 	if value == nil {
 		return "\\N", nil // MySQL NULL representation
 	}
-	
+
 	// Handle MySQL-specific types based on field metadata
 	switch field.Type.(type) {
 	case *arrow.StringType:
-		// Check for MySQL JSON columns  
+		// Check for MySQL JSON columns
 		if isJSON, ok := field.Metadata.GetValue("mysql.is_json"); ok && isJSON == "true" {
 			// JSON values are already formatted correctly by type converter
 			return fmt.Sprintf("%v", value), nil
 		}
 		return fmt.Sprintf("%v", value), nil
-		
+
 	case *arrow.BinaryType:
 		// Check for MySQL spatial columns
 		if isSpatial, ok := field.Metadata.GetValue("mysql.is_spatial"); ok && isSpatial == "true" {
@@ -448,14 +458,14 @@ func (impl *mysqlBulkIngestImpl) goValueToCSVString(value any, field *arrow.Fiel
 			return fmt.Sprintf("0x%x", bytes), nil
 		}
 		return fmt.Sprintf("0x%x", []byte(fmt.Sprintf("%v", value))), nil
-		
+
 	case *arrow.BooleanType:
 		// MySQL boolean representation in CSV
 		if b, ok := value.(bool); ok && b {
 			return "1", nil
 		}
 		return "0", nil
-		
+
 	default:
 		// For all other types (including timestamps handled by type converter), use string representation
 		return fmt.Sprintf("%v", value), nil
@@ -463,7 +473,7 @@ func (impl *mysqlBulkIngestImpl) goValueToCSVString(value any, field *arrow.Fiel
 }
 
 // Delete removes temporary files
-func (impl *mysqlBulkIngestImpl) Delete(ctx context.Context, chunk driverbase.BulkIngestPendingCopy) error {
+func (impl *mysqlBulkIngestImpl) Delete(ctx context.Context, chunk driverbase.BulkIngestPendingCopy) (err error) {
 	tempFile := chunk.(*mysqlTempFile)
 	return os.Remove(tempFile.filePath)
 }
