@@ -17,6 +17,8 @@ package mysql
 import (
 	"context"
 	"fmt"
+
+	"github.com/apache/arrow-adbc/go/adbc"
 )
 
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
@@ -49,4 +51,15 @@ func (c *mysqlConnectionImpl) SetCurrentDbSchema(schema string) error {
 		return fmt.Errorf("cannot set schema in MySQL: schemas are not supported")
 	}
 	return nil
+}
+
+func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes []adbc.InfoCode) error {
+	if c.version == "" {
+		var version, comment string
+		if err := c.Conn.QueryRowContext(ctx, "SELECT @@version, @@version_comment").Scan(&version, &comment); err != nil {
+			return c.ErrorHelper.Errorf(adbc.StatusInternal, "failed to get version: %v", err)
+		}
+		c.version = fmt.Sprintf("%s (%s)", version, comment)
+	}
+	return c.DriverInfo.RegisterInfoCode(adbc.InfoVendorVersion, c.version)
 }
