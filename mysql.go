@@ -201,6 +201,21 @@ type mysqlConnectionImpl struct {
 	version string
 }
 
+// NewStatement overrides the embedded NewStatement to ensure statements reference this MySQL connection
+func (c *mysqlConnectionImpl) NewStatement() (adbc.Statement, error) {
+	// Create a new statement that references this mysqlConnectionImpl directly
+	base := driverbase.NewStatementImplBase(&c.ConnectionImplBase, c.ErrorHelper)
+	stmt := &sqlwrapper.StatementImpl{
+		StatementImplBase: base,
+		Conn:              c.Conn,
+		ConnectionImpl:    c, // Pass the MySQL connection directly (now possible with any type)
+		BatchSize:         1000,
+		TypeConverter:     c.TypeConverter,
+		BulkIngestOptions: driverbase.NewBulkIngestOptions(),
+	}
+	return driverbase.NewStatement(stmt), nil
+}
+
 // implements DbObjectsEnumerator interface
 var _ driverbase.DbObjectsEnumerator = (*mysqlConnectionImpl)(nil)
 
@@ -215,10 +230,6 @@ func (f *mysqlConnectionFactory) CreateConnection(
 	ctx context.Context,
 	conn *sqlwrapper.ConnectionImpl,
 ) (driverbase.ConnectionImpl, error) {
-	// Set up MySQL-specific bulk ingest factory
-	bulkIngestFactory := &mysqlBulkIngestFactory{}
-	conn.SetBulkIngestImplFactory(bulkIngestFactory)
-
 	// Wrap the pre-built sqlwrapper connection with MySQL-specific functionality
 	return &mysqlConnectionImpl{
 		ConnectionImpl: conn,

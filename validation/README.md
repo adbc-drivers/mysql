@@ -24,7 +24,7 @@
 2. Set the environment variable:
 
    ```shell
-   export MYSQL_DSN="my:password@tcp(localhost:3306)/db?allowAllFiles=true&local_infile=true"
+   export MYSQL_DSN="my:password@tcp(localhost:3306)/db"
    ```
 3. Run the tests:
 
