@@ -30,9 +30,13 @@ The driver can be installed with `dbc`.
 To use the driver, provide the MySQL DSN as the `url` option.
 
 ## Feature & Type Support
+
 {{ features|safe }}
 
 ### Types
+
 {{ types|safe }}
+
+{{ footnotes|safe }}
 
 [mysql]: https://www.mysql.com/

@@ -28,4 +28,4 @@ python = ">=3.13,<4"
 pytest-lazy-fixtures = ">=1.3.2,<2"
 
 [pypi-dependencies]
-adbc-drivers-validation = { git = "ssh://git@github.com/adbc-drivers/validation", rev = "c7a033e80a8bd9906c4b54e4f75358a5ac844483" }
+adbc-drivers-validation = { git = "ssh://git@github.com/adbc-drivers/validation", rev = "db4b557881bb992e17a09538f9590f248e9fb90c" }

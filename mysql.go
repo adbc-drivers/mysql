@@ -15,6 +15,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	// register the "mysql" driver with database/sql
 	_ "github.com/go-sql-driver/mysql"
 
+	"github.com/adbc-drivers/driverbase-go/driverbase"
 	sqlwrapper "github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -192,14 +194,45 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 	}
 }
 
+// mysqlConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
+type mysqlConnectionImpl struct {
+	*sqlwrapper.ConnectionImpl // Embed sqlwrapper connection for all standard functionality
+
+	version string
+}
+
+// implements DbObjectsEnumerator interface
+var _ driverbase.DbObjectsEnumerator = (*mysqlConnectionImpl)(nil)
+
+// implements CurrentNameSpacer interface
+var _ driverbase.CurrentNamespacer = (*mysqlConnectionImpl)(nil)
+
+// mysqlConnectionFactory creates MySQL connections
+type mysqlConnectionFactory struct{}
+
+// CreateConnection implements sqlwrapper.ConnectionFactory
+func (f *mysqlConnectionFactory) CreateConnection(
+	ctx context.Context,
+	conn *sqlwrapper.ConnectionImpl,
+) (driverbase.ConnectionImpl, error) {
+	// Wrap the pre-built sqlwrapper connection with MySQL-specific functionality
+	return &mysqlConnectionImpl{
+		ConnectionImpl: conn,
+	}, nil
+}
+
 // NewDriver constructs the ADBC Driver for "mysql".
 func NewDriver(alloc memory.Allocator) adbc.Driver {
 	typeConverter := &mySQLTypeConverter{
 		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{},
 	}
-	driver := sqlwrapper.NewDriver(alloc, "mysql", "MySQL", typeConverter)
+
+	driver := sqlwrapper.NewDriver(alloc, "mysql", "MySQL", typeConverter).
+		WithConnectionFactory(&mysqlConnectionFactory{})
+
 	if err := driver.DriverInfo.RegisterInfoCode(adbc.InfoDriverName, "ADBC Driver Foundry Driver for MySQL"); err != nil {
 		panic(err)
 	}
+
 	return driver
 }
