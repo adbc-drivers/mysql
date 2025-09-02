@@ -17,8 +17,8 @@ from adbc_drivers_validation.tests.connection import (
     generate_tests,
 )
 
-from .mysql import MySQLQuirks
+from . import mysql
 
 
 def pytest_generate_tests(metafunc) -> None:
-    return generate_tests(MySQLQuirks(), metafunc)
+    return generate_tests(mysql.QUIRKS, metafunc)

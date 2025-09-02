@@ -23,6 +23,7 @@ class MySQLQuirks(model.DriverQuirks):
     driver_name = "ADBC Driver Foundry Driver for MySQL"
     vendor_name = "MySQL"
     vendor_version = "9.4.0-1.el9"
+    short_version = "9.4"
     features = model.DriverFeatures(
         connection_get_table_schema=False,
         connection_transactions=False,
@@ -48,8 +49,8 @@ class MySQLQuirks(model.DriverQuirks):
     )
 
     @property
-    def queries_path(self) -> Path:
-        return Path(__file__).parent.parent / "queries"
+    def queries_paths(self) -> tuple[Path]:
+        return (Path(__file__).parent.parent / "queries",)
 
     def bind_parameter(self, index: int) -> str:
         return "?"
@@ -63,3 +64,6 @@ class MySQLQuirks(model.DriverQuirks):
 
     def split_statement(self, statement: str) -> list[str]:
         return quirks.split_statement(statement)
+
+
+QUIRKS = [MySQLQuirks()]

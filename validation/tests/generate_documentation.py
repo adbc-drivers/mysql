@@ -17,7 +17,7 @@ from pathlib import Path
 
 import adbc_drivers_validation.generate_documentation as generate_documentation
 
-from .mysql import MySQLQuirks
+from . import mysql
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     template = template.resolve()
 
     generate_documentation.generate(
-        MySQLQuirks(),
+        mysql.QUIRKS,
         Path("validation-report.xml").resolve(),
         template,
         args.output.resolve(),

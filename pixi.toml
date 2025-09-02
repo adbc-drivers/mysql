@@ -27,4 +27,4 @@ release = "adbc-release"
 python = ">=3.13.5,<3.14"
 
 [pypi-dependencies]
-adbc-drivers-dev = { git = "ssh://git@github.com/adbc-drivers/dev", rev = "51ef7d7a3b06e557fb3067773d24df0e30599f7f" }
+adbc-drivers-dev = { git = "ssh://git@github.com/adbc-drivers/dev", rev = "fe64eee5e66ddf6465460fd9ea0209550067757e" }

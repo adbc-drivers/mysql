@@ -14,13 +14,12 @@
 
 import adbc_drivers_validation.tests.ingest
 
-from .mysql import MySQLQuirks
+from . import mysql
 
 
 def pytest_generate_tests(metafunc) -> None:
-    return adbc_drivers_validation.tests.ingest.generate_tests(MySQLQuirks(), metafunc)
+    return adbc_drivers_validation.tests.ingest.generate_tests(mysql.QUIRKS, metafunc)
 
 
 class TestIngest(adbc_drivers_validation.tests.ingest.TestIngest):
-    def test_schema(self, noci, driver, conn) -> None:
-        super().test_schema(driver, conn)
+    pass
