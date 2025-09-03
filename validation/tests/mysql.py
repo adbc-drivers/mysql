@@ -56,7 +56,13 @@ class MySQLQuirks(model.DriverQuirks):
         return "?"
 
     def is_table_not_found(self, table_name: str, error: Exception) -> bool:
-        raise error
+        # Check if the error indicates a table not found condition
+        error_str = str(error).lower()
+        return (
+            "table" in error_str and 
+            ("does not exist" in error_str or "doesn't exist" in error_str or "not found" in error_str) and
+            table_name.lower() in error_str
+        )
 
     def quote_one_identifier(self, identifier: str) -> str:
         identifier = identifier.replace("`", "``")

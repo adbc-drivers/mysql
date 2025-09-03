@@ -157,8 +157,8 @@ func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 		_ = c.dropTable(ctx, conn, tableName)
 		return c.createTable(ctx, conn, tableName, schema, false)
 	case adbc.OptionValueIngestModeAppend:
-		// Table should already exist, do nothing
-		return nil
+		// Table should already exist, verify it exists
+		return c.validateTableExists(ctx, conn, tableName)
 	default:
 		return c.Base().ErrorHelper.InvalidArgument("unsupported ingest mode: %s", options.Mode)
 	}
@@ -202,6 +202,23 @@ func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sql.Conn, tab
 	return err
 }
 
+// validateTableExists checks if a table exists, returns appropriate ADBC error if not
+func (c *mysqlConnectionImpl) validateTableExists(ctx context.Context, conn *sql.Conn, tableName string) error {
+	// Check if table exists using INFORMATION_SCHEMA
+	checkSQL := `SELECT 1 FROM INFORMATION_SCHEMA.TABLES 
+				 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`
+	
+	var exists int
+	err := conn.QueryRowContext(ctx, checkSQL, tableName).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return c.Base().ErrorHelper.InvalidArgument("table '%s' does not exist for append operation", tableName)
+	} else if err != nil {
+		return c.Base().ErrorHelper.IO("failed to check table existence: %v", err)
+	}
+	
+	return nil
+}
+
 // arrowToMySQLType converts Arrow data type to MySQL column type
 func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullable bool) string {
 	var mysqlType string
@@ -228,9 +245,54 @@ func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullabl
 	case *arrow.Date32Type:
 		mysqlType = "DATE"
 	case *arrow.TimestampType:
-		mysqlType = "TIMESTAMP"
-	case *arrow.Time32Type, *arrow.Time64Type:
-		mysqlType = "TIME"
+		timestampType := arrowType.(*arrow.TimestampType)
+		
+		// Determine precision based on Arrow timestamp unit
+		var precision string
+		switch timestampType.Unit {
+		case arrow.Second:
+			precision = ""
+		case arrow.Millisecond:
+			precision = "(3)"
+		case arrow.Microsecond:
+			precision = "(6)"
+		case arrow.Nanosecond:
+			precision = "(6)" // MySQL max is 6 digits
+		default:
+			precision = ""
+		}
+		
+		// Use DATETIME for timezone-naive timestamps, TIMESTAMP for timezone-aware
+		if timestampType.TimeZone != "" {
+			// Timezone-aware (timestamptz) -> TIMESTAMP
+			mysqlType = "TIMESTAMP" + precision
+		} else {
+			// Timezone-naive (timestamp) -> DATETIME
+			mysqlType = "DATETIME" + precision
+		}
+	case *arrow.Time32Type:
+		timeType := arrowType.(*arrow.Time32Type)
+		// Determine precision based on Arrow time unit
+		switch timeType.Unit {
+		case arrow.Second:
+			mysqlType = "TIME"
+		case arrow.Millisecond:
+			mysqlType = "TIME(3)"
+		default:
+			mysqlType = "TIME"
+		}
+		
+	case *arrow.Time64Type:
+		timeType := arrowType.(*arrow.Time64Type)
+		// Determine precision based on Arrow time unit
+		switch timeType.Unit {
+		case arrow.Microsecond:
+			mysqlType = "TIME(6)"
+		case arrow.Nanosecond:
+			mysqlType = "TIME(6)" // MySQL max is 6 digits
+		default:
+			mysqlType = "TIME"
+		}
 	case *arrow.Decimal32Type, *arrow.Decimal64Type, *arrow.Decimal128Type, *arrow.Decimal256Type:
 		if decType, ok := arrowType.(arrow.DecimalType); ok {
 			mysqlType = fmt.Sprintf("DECIMAL(%d,%d)", decType.GetPrecision(), decType.GetScale())
