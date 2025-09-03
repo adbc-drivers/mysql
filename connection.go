@@ -16,6 +16,7 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,10 +32,10 @@ func (c *mysqlConnectionImpl) GetCurrentCatalog() (string, error) {
 	var database string
 	err := c.Db.QueryRowContext(context.Background(), "SELECT DATABASE()").Scan(&database)
 	if err != nil {
-		return "", fmt.Errorf("failed to get current database: %w", err)
+		return "", c.Base().ErrorHelper.IO("failed to get current database: %v", err)
 	}
 	if database == "" {
-		return "", fmt.Errorf("no current database set")
+		return "", c.Base().ErrorHelper.InvalidState("no current database set")
 	}
 	return database, nil
 }
@@ -53,7 +54,7 @@ func (c *mysqlConnectionImpl) SetCurrentCatalog(catalog string) error {
 // SetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) SetCurrentDbSchema(schema string) error {
 	if schema != "" {
-		return fmt.Errorf("cannot set schema in MySQL: schemas are not supported")
+		return c.Base().ErrorHelper.InvalidArgument("cannot set schema in MySQL: schemas are not supported")
 	}
 	return nil
 }
@@ -70,7 +71,7 @@ func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes [
 }
 
 // ExecuteBulkIngest performs MySQL bulk ingest using INSERT statements
-func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
+func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sql.Conn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	if stream == nil {
 		return -1, c.Base().ErrorHelper.InvalidArgument("stream cannot be nil")
 	}
@@ -80,40 +81,36 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *dr
 		tableName = options.TableName
 	}
 
-	var tableCreated bool
 	var totalRowsInserted int64
+
+	// Get schema from stream and create table if needed
+	schema := stream.Schema()
+	if err := c.createTableIfNeeded(ctx, conn, tableName, schema, options); err != nil {
+		return -1, c.Base().ErrorHelper.IO("failed to create table: %v", err)
+	}
+
+	// Build INSERT statement (once for all batches)
+	var placeholders []string
+	for i := 0; i < int(schema.NumFields()); i++ {
+		placeholders = append(placeholders, "?")
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO `%s` VALUES (%s)",
+		tableName,
+		strings.Join(placeholders, ", "))
+
+	// Prepare the statement (once for all batches)
+	stmt, err := conn.PrepareContext(ctx, insertSQL)
+	if err != nil {
+		return -1, c.Base().ErrorHelper.IO("failed to prepare insert statement: %v", err)
+	}
+	defer func() {
+		err = errors.Join(err, stmt.Close())
+	}()
 
 	// Process each record batch in the stream
 	for stream.Next() {
 		record := stream.Record()
-		schema := record.Schema()
-
-		// Create table if needed (only on first batch)
-		if !tableCreated {
-			if err := c.createTableIfNeeded(ctx, tableName, schema, options); err != nil {
-				return -1, c.Base().ErrorHelper.IO("failed to create table: %v", err)
-			}
-			tableCreated = true
-		}
-
-		// Build INSERT statement
-		var placeholders []string
-		for i := 0; i < int(schema.NumFields()); i++ {
-			placeholders = append(placeholders, "?")
-		}
-
-		insertSQL := fmt.Sprintf("INSERT INTO `%s` VALUES (%s)",
-			tableName,
-			strings.Join(placeholders, ", "))
-
-		// Prepare the statement
-		stmt, err := c.Conn.PrepareContext(ctx, insertSQL)
-		if err != nil {
-			return -1, c.Base().ErrorHelper.IO("failed to prepare insert statement: %v", err)
-		}
-		defer func() {
-			err = errors.Join(err, stmt.Close())
-		}()
 
 		// Insert each row
 		rowsInBatch := int(record.NumRows())
@@ -152,28 +149,28 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, options *dr
 }
 
 // createTableIfNeeded creates the table based on the ingest mode
-func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
+func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql.Conn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
 	switch options.Mode {
 	case adbc.OptionValueIngestModeCreate:
 		// Create the table (fail if exists)
-		return c.createTable(ctx, tableName, schema, false)
+		return c.createTable(ctx, conn, tableName, schema, false)
 	case adbc.OptionValueIngestModeCreateAppend:
 		// Create the table if it doesn't exist
-		return c.createTable(ctx, tableName, schema, true)
+		return c.createTable(ctx, conn, tableName, schema, true)
 	case adbc.OptionValueIngestModeReplace:
 		// Drop and recreate the table (ignore error if table doesn't exist)
-		_ = c.dropTable(ctx, tableName)
-		return c.createTable(ctx, tableName, schema, false)
+		_ = c.dropTable(ctx, conn, tableName)
+		return c.createTable(ctx, conn, tableName, schema, false)
 	case adbc.OptionValueIngestModeAppend:
 		// Table should already exist, do nothing
 		return nil
 	default:
-		return fmt.Errorf("unsupported ingest mode: %s", options.Mode)
+		return c.Base().ErrorHelper.InvalidArgument("unsupported ingest mode: %s", options.Mode)
 	}
 }
 
 // createTable creates a MySQL table from Arrow schema
-func (c *mysqlConnectionImpl) createTable(ctx context.Context, tableName string, schema *arrow.Schema, ifNotExists bool) error {
+func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sql.Conn, tableName string, schema *arrow.Schema, ifNotExists bool) error {
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("CREATE TABLE ")
 	if ifNotExists {
@@ -199,14 +196,14 @@ func (c *mysqlConnectionImpl) createTable(ctx context.Context, tableName string,
 
 	queryBuilder.WriteString(")")
 
-	_, err := c.Conn.ExecContext(ctx, queryBuilder.String())
+	_, err := conn.ExecContext(ctx, queryBuilder.String())
 	return err
 }
 
 // dropTable drops a MySQL table
-func (c *mysqlConnectionImpl) dropTable(ctx context.Context, tableName string) error {
+func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sql.Conn, tableName string) error {
 	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tableName)
-	_, err := c.Conn.ExecContext(ctx, dropSQL)
+	_, err := conn.ExecContext(ctx, dropSQL)
 	return err
 }
 
