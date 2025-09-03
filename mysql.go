@@ -232,10 +232,11 @@ func NewDriver(alloc memory.Allocator) adbc.Driver {
 
 	driver := sqlwrapper.NewDriver(alloc, "mysql", "MySQL", typeConverter).
 		WithConnectionFactory(&mysqlConnectionFactory{})
-
-	if err := driver.DriverInfo.RegisterInfoCode(adbc.InfoDriverName, "ADBC Driver Foundry Driver for MySQL"); err != nil {
-		panic(err)
-	}
+	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
+		adbc.InfoDriverName:      "ADBC Driver Foundry Driver for MySQL",
+		adbc.InfoVendorSql:       true,
+		adbc.InfoVendorSubstrait: false,
+	})
 
 	return driver
 }
