@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import platform
 from pathlib import Path
 
 import adbc_drivers_validation.model
@@ -38,6 +39,7 @@ def driver(request) -> adbc_drivers_validation.model.DriverQuirks:
 @pytest.fixture(scope="session")
 def driver_path(driver: adbc_drivers_validation.model.DriverQuirks) -> str:
     # Assume shared library is in the repo root
+    ext = ".dylib" if platform.system() == "Darwin" else ".so"
     return str(
-        Path(__file__).parent.parent.parent / f"build/libadbc_driver_{driver.name}.so"
+        Path(__file__).parent.parent.parent / f"libadbc_driver_{driver.name}{ext}"
     )
