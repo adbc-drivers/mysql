@@ -76,16 +76,11 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sql.C
 		return -1, c.Base().ErrorHelper.InvalidArgument("stream cannot be nil")
 	}
 
-	tableName := "target_table"
-	if options.TableName != "" {
-		tableName = options.TableName
-	}
-
 	var totalRowsInserted int64
 
 	// Get schema from stream and create table if needed
 	schema := stream.Schema()
-	if err := c.createTableIfNeeded(ctx, conn, tableName, schema, options); err != nil {
+	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
 		return -1, c.Base().ErrorHelper.IO("failed to create table: %v", err)
 	}
 
@@ -96,7 +91,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sql.C
 	}
 
 	insertSQL := fmt.Sprintf("INSERT INTO `%s` VALUES (%s)",
-		tableName,
+		options.TableName,
 		strings.Join(placeholders, ", "))
 
 	// Prepare the statement (once for all batches)
