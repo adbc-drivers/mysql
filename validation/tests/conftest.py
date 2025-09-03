@@ -41,5 +41,5 @@ def driver_path(driver: adbc_drivers_validation.model.DriverQuirks) -> str:
     # Assume shared library is in the repo root
     ext = ".dylib" if platform.system() == "Darwin" else ".so"
     return str(
-        Path(__file__).parent.parent.parent / f"libadbc_driver_{driver.name}{ext}"
+        Path(__file__).parent.parent.parent / f"build/libadbc_driver_{driver.name}{ext}"
     )
