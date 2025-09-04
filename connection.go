@@ -206,7 +206,7 @@ func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sql.Conn, tab
 func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullable bool) string {
 	var mysqlType string
 
-	switch arrowType.(type) {
+	switch arrowType := arrowType.(type) {
 	case *arrow.BooleanType:
 		mysqlType = "BOOLEAN"
 	case *arrow.Int8Type:
@@ -228,9 +228,51 @@ func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullabl
 	case *arrow.Date32Type:
 		mysqlType = "DATE"
 	case *arrow.TimestampType:
-		mysqlType = "TIMESTAMP"
-	case *arrow.Time32Type, *arrow.Time64Type:
-		mysqlType = "TIME"
+
+		// Determine precision based on Arrow timestamp unit
+		var precision string
+		switch arrowType.Unit {
+		case arrow.Second:
+			precision = ""
+		case arrow.Millisecond:
+			precision = "(3)"
+		case arrow.Microsecond:
+			precision = "(6)"
+		case arrow.Nanosecond:
+			precision = "(6)" // MySQL max is 6 digits
+		default:
+			precision = ""
+		}
+
+		// Use DATETIME for timezone-naive timestamps, TIMESTAMP for timezone-aware
+		if arrowType.TimeZone != "" {
+			// Timezone-aware (timestamptz) -> TIMESTAMP
+			mysqlType = "TIMESTAMP" + precision
+		} else {
+			// Timezone-naive (timestamp) -> DATETIME
+			mysqlType = "DATETIME" + precision
+		}
+	case *arrow.Time32Type:
+		// Determine precision based on Arrow time unit
+		switch arrowType.Unit {
+		case arrow.Second:
+			mysqlType = "TIME"
+		case arrow.Millisecond:
+			mysqlType = "TIME(3)"
+		default:
+			mysqlType = "TIME"
+		}
+
+	case *arrow.Time64Type:
+		// Determine precision based on Arrow time unit
+		switch arrowType.Unit {
+		case arrow.Microsecond:
+			mysqlType = "TIME(6)"
+		case arrow.Nanosecond:
+			mysqlType = "TIME(6)" // MySQL max is 6 digits
+		default:
+			mysqlType = "TIME"
+		}
 	case *arrow.Decimal32Type, *arrow.Decimal64Type, *arrow.Decimal128Type, *arrow.Decimal256Type:
 		if decType, ok := arrowType.(arrow.DecimalType); ok {
 			mysqlType = fmt.Sprintf("DECIMAL(%d,%d)", decType.GetPrecision(), decType.GetScale())
