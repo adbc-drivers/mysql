@@ -17,7 +17,7 @@ module github.com/adbc-drivers/mysql
 go 1.24.4
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250902013152-2511d884097d
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250903011820-9af7d428769b
 	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250902013152-2511d884097d
 	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250829042004-8c5a40a2a05c
 	github.com/apache/arrow-adbc/go/adbc v1.7.0
@@ -59,7 +59,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.7.1 // indirect
+	go.opentelemetry.io/proto/otlp v1.8.0 // indirect
 	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b // indirect
 	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/net v0.43.0 // indirect
