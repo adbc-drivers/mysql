@@ -201,6 +201,9 @@ type mysqlConnectionImpl struct {
 	version string
 }
 
+// implements BulkIngester interface
+var _ sqlwrapper.BulkIngester = (*mysqlConnectionImpl)(nil)
+
 // implements DbObjectsEnumerator interface
 var _ driverbase.DbObjectsEnumerator = (*mysqlConnectionImpl)(nil)
 
