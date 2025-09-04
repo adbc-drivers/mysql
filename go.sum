@@ -1,7 +1,5 @@
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
-github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250902013152-2511d884097d h1:ndmQavR5rl7Oqtp7G0fXtsAdKkWOaYe7J1JoCOIcqBU=
-github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250902013152-2511d884097d/go.mod h1:J8OlxauTt/3RA2p3gRxm9MFvtsFz3jQyUAjOSRGAgJM=
 github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250903011820-9af7d428769b h1:nkFELjiCU0EJgPYdz8SeUQGj3crZzEnu80MfJE6Ypdg=
 github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250903011820-9af7d428769b/go.mod h1:J8OlxauTt/3RA2p3gRxm9MFvtsFz3jQyUAjOSRGAgJM=
 github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250902013152-2511d884097d h1:mZmZe6sCGR4H3h1/MotjCu5EEMDmda918LhqnLCS04Q=
@@ -97,8 +95,6 @@ go.opentelemetry.io/otel/sdk/metric v1.38.0 h1:aSH66iL0aZqo//xXzQLYozmWrXxyFkBJ6
 go.opentelemetry.io/otel/sdk/metric v1.38.0/go.mod h1:dg9PBnW9XdQ1Hd6ZnRz689CbtrUp0wMMs9iPcgT9EZA=
 go.opentelemetry.io/otel/trace v1.38.0 h1:Fxk5bKrDZJUH+AMyyIXGcFAPah0oRcT+LuNtJrmcNLE=
 go.opentelemetry.io/otel/trace v1.38.0/go.mod h1:j1P9ivuFsTceSWe1oY+EeW3sc+Pp42sO++GHkg4wwhs=
-go.opentelemetry.io/proto/otlp v1.7.1 h1:gTOMpGDb0WTBOP8JaO72iL3auEZhVmAQg4ipjOVAtj4=
-go.opentelemetry.io/proto/otlp v1.7.1/go.mod h1:b2rVh6rfI/s2pHWNlB7ILJcRALpcNDzKhACevjI+ZnE=
 go.opentelemetry.io/proto/otlp v1.8.0 h1:fRAZQDcAFHySxpJ1TwlA1cJ4tvcrw7nXl9xWWC8N5CE=
 go.opentelemetry.io/proto/otlp v1.8.0/go.mod h1:tIeYOeNBU4cvmPqpaji1P+KbB4Oloai8wN4rWzRrFF0=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
