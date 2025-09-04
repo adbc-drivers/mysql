@@ -157,8 +157,8 @@ func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 		_ = c.dropTable(ctx, conn, tableName)
 		return c.createTable(ctx, conn, tableName, schema, false)
 	case adbc.OptionValueIngestModeAppend:
-		// Table should already exist, verify it exists
-		return c.validateTableExists(ctx, conn, tableName)
+		// Table should already exist, do nothing
+		return nil
 	default:
 		return c.Base().ErrorHelper.InvalidArgument("unsupported ingest mode: %s", options.Mode)
 	}
@@ -200,23 +200,6 @@ func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sql.Conn, tab
 	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tableName)
 	_, err := conn.ExecContext(ctx, dropSQL)
 	return err
-}
-
-// validateTableExists checks if a table exists, returns appropriate ADBC error if not
-func (c *mysqlConnectionImpl) validateTableExists(ctx context.Context, conn *sql.Conn, tableName string) error {
-	// Check if table exists using INFORMATION_SCHEMA
-	checkSQL := `SELECT 1 FROM INFORMATION_SCHEMA.TABLES
-				 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`
-
-	var exists int
-	err := conn.QueryRowContext(ctx, checkSQL, tableName).Scan(&exists)
-	if err == sql.ErrNoRows {
-		return c.Base().ErrorHelper.InvalidArgument("table '%s' does not exist for append operation", tableName)
-	} else if err != nil {
-		return c.Base().ErrorHelper.IO("failed to check table existence: %v", err)
-	}
-
-	return nil
 }
 
 // arrowToMySQLType converts Arrow data type to MySQL column type
