@@ -15,4 +15,4 @@
 sort-keys = []
 
 [tags]
-sql-type-name = "NUMERIC"
+sql-type-name = "DECIMAL"
