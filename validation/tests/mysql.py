@@ -31,8 +31,8 @@ class MySQLQuirks(model.DriverQuirks):
         get_objects_constraints_primary=False,
         get_objects_constraints_unique=False,
         statement_bulk_ingest=True,
-        statement_bulk_ingest_catalog=True,
-        statement_bulk_ingest_schema=True,
+        statement_bulk_ingest_catalog=False,
+        statement_bulk_ingest_schema=False,
         statement_bulk_ingest_temporary=False,
         statement_execute_schema=True,
         statement_get_parameter_schema=False,
@@ -68,18 +68,7 @@ class MySQLQuirks(model.DriverQuirks):
             and table_name.lower() in error_str
         )
 
-    def quote_identifier(self, *identifiers: str) -> str:
-        # Filter out None and empty values (MySQL doesn't have separate schemas/catalogs)
-        valid_identifiers = [
-            self.quote_one_identifier(ident)
-            for ident in identifiers
-            if ident is not None and ident != ""
-        ]
-        return ".".join(valid_identifiers)
-
     def quote_one_identifier(self, identifier: str) -> str:
-        if identifier is None:
-            return None
         identifier = identifier.replace("`", "``")
         return f"`{identifier}`"
 
