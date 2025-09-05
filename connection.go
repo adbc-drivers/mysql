@@ -16,6 +16,7 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -69,6 +70,130 @@ func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes [
 	}
 	return c.DriverInfo.RegisterInfoCode(adbc.InfoVendorVersion, c.version)
 }
+
+// GetTableSchema returns the Arrow schema for a MySQL table
+func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *string, dbSchema *string, tableName string) (schema *arrow.Schema, err error) {
+	// Struct to capture MySQL column information
+	type tableColumn struct {
+		OrdinalPosition        int32
+		ColumnName             string
+		DataType               string
+		IsNullable             string
+		CharacterMaximumLength sql.NullInt64
+		NumericPrecision       sql.NullInt64
+		NumericScale           sql.NullInt64
+	}
+ 
+ 
+	// Build query to get column information including precision/scale from INFORMATION_SCHEMA
+	query := `SELECT
+		ORDINAL_POSITION,
+		COLUMN_NAME,
+		DATA_TYPE,
+		IS_NULLABLE,
+		CHARACTER_MAXIMUM_LENGTH,
+		NUMERIC_PRECISION,
+		NUMERIC_SCALE
+	FROM INFORMATION_SCHEMA.COLUMNS
+	WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+	ORDER BY ORDINAL_POSITION`
+ 
+ 
+	var args []interface{}
+	if catalog != nil && *catalog != "" {
+		// Use specified catalog (database)
+		args = []interface{}{*catalog, tableName}
+	} else {
+		// Use current database
+		currentDB, err := c.GetCurrentCatalog()
+		if err != nil {
+			return nil, c.Base().ErrorHelper.IO("failed to get current database: %v", err)
+		}
+		args = []interface{}{currentDB, tableName}
+	}
+ 
+ 
+	// Execute query to get column information
+	rows, err := c.Conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, c.Base().ErrorHelper.IO("failed to query table schema: %v", err)
+	}
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
+ 
+ 
+	var columns []tableColumn
+	for rows.Next() {
+		var col tableColumn
+		err := rows.Scan(
+			&col.OrdinalPosition,
+			&col.ColumnName,
+			&col.DataType,
+			&col.IsNullable,
+			&col.CharacterMaximumLength,
+			&col.NumericPrecision,
+			&col.NumericScale,
+		)
+		if err != nil {
+			return nil, c.Base().ErrorHelper.IO("failed to scan column information: %v", err)
+		}
+		columns = append(columns, col)
+	}
+ 
+ 
+	if err := rows.Err(); err != nil {
+		return nil, c.Base().ErrorHelper.IO("rows error: %v", err)
+	}
+ 
+ 
+	if len(columns) == 0 {
+		return nil, c.Base().ErrorHelper.InvalidArgument("table not found: %s", tableName)
+	}
+ 
+ 
+	// Build Arrow schema from column information using type converter
+	fields := make([]arrow.Field, len(columns))
+	for i, col := range columns {
+		// Create ColumnType struct for the type converter
+		var length, precision, scale *int64
+		if col.CharacterMaximumLength.Valid {
+			length = &col.CharacterMaximumLength.Int64
+		}
+		if col.NumericPrecision.Valid {
+			precision = &col.NumericPrecision.Int64
+		}
+		if col.NumericScale.Valid {
+			scale = &col.NumericScale.Int64
+		}
+		
+		colType := sqlwrapper.ColumnType{
+			Name:             col.ColumnName,
+			DatabaseTypeName: col.DataType,
+			Nullable:         col.IsNullable == "YES",
+			Length:           length,
+			Precision:        precision,
+			Scale:            scale,
+		}
+		
+		arrowType, nullable, metadata, err := c.TypeConverter.ConvertRawColumnType(colType)
+		if err != nil {
+			return nil, c.Base().ErrorHelper.IO("failed to convert column type for %s: %v", col.ColumnName, err)
+		}
+		
+		fields[i] = arrow.Field{
+			Name:     col.ColumnName,
+			Type:     arrowType,
+			Nullable: nullable,
+			Metadata: metadata,
+		}
+	}
+ 
+ 
+	return arrow.NewSchema(fields, nil), nil
+ }
+ 
+ 
 
 // ExecuteBulkIngest performs MySQL bulk ingest using INSERT statements
 func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
@@ -148,14 +273,14 @@ func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 	switch options.Mode {
 	case adbc.OptionValueIngestModeCreate:
 		// Create the table (fail if exists)
-		return c.createTable(ctx, conn, tableName, schema, false)
+		return c.createTable(ctx, conn, tableName, schema, false, options.Temporary)
 	case adbc.OptionValueIngestModeCreateAppend:
 		// Create the table if it doesn't exist
-		return c.createTable(ctx, conn, tableName, schema, true)
+		return c.createTable(ctx, conn, tableName, schema, true, options.Temporary)
 	case adbc.OptionValueIngestModeReplace:
 		// Drop and recreate the table (ignore error if table doesn't exist)
 		_ = c.dropTable(ctx, conn, tableName)
-		return c.createTable(ctx, conn, tableName, schema, false)
+		return c.createTable(ctx, conn, tableName, schema, false, options.Temporary)
 	case adbc.OptionValueIngestModeAppend:
 		// Table should already exist, do nothing
 		return nil
@@ -165,9 +290,15 @@ func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 }
 
 // createTable creates a MySQL table from Arrow schema
-func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool) error {
+func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool, temporary bool) error {
 	var queryBuilder strings.Builder
-	queryBuilder.WriteString("CREATE TABLE ")
+	
+	queryBuilder.WriteString("CREATE ")
+	if temporary {
+		queryBuilder.WriteString("TEMPORARY ")
+	}
+	queryBuilder.WriteString("TABLE ")
+
 	if ifNotExists {
 		queryBuilder.WriteString("IF NOT EXISTS ")
 	}

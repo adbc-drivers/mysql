@@ -16,7 +16,6 @@ package mysql
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
@@ -37,24 +36,24 @@ type mySQLTypeConverter struct {
 	sqlwrapper.DefaultTypeConverter
 }
 
-// ConvertColumnType implements TypeConverter with MySQL-specific enhancements
-func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.DataType, bool, arrow.Metadata, error) {
-	typeName := strings.ToUpper(colType.DatabaseTypeName())
-	nullable, _ := colType.Nullable()
+// ConvertRawColumnType implements TypeConverter with MySQL-specific enhancements
+func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType) (arrow.DataType, bool, arrow.Metadata, error) {
+	typeName := strings.ToUpper(colType.DatabaseTypeName)
+	nullable := colType.Nullable
 
 	switch typeName {
 	case "JSON":
 		// Convert MySQL JSON to Arrow string with special metadata
 		// TODO: we should use arrow.json extension type
 		metadataMap := map[string]string{
-			"sql.database_type_name": colType.DatabaseTypeName(),
-			"sql.column_name":        colType.Name(),
+			"sql.database_type_name": colType.DatabaseTypeName,
+			"sql.column_name":        colType.Name,
 			"mysql.is_json":          "true",
 		}
 
 		// Add length if available
-		if length, ok := colType.Length(); ok {
-			metadataMap["sql.length"] = fmt.Sprintf("%d", length)
+		if colType.Length != nil {
+			metadataMap["sql.length"] = fmt.Sprintf("%d", *colType.Length)
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
@@ -64,8 +63,8 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 		// Convert MySQL spatial types to binary with spatial metadata
 		// TODO: we should use geoarrow extension types if applicable
 		metadata := arrow.MetadataFrom(map[string]string{
-			"sql.database_type_name": colType.DatabaseTypeName(),
-			"sql.column_name":        colType.Name(),
+			"sql.database_type_name": colType.DatabaseTypeName,
+			"sql.column_name":        colType.Name,
 			"mysql.is_spatial":       "true",
 		})
 		return arrow.BinaryTypes.Binary, nullable, metadata, nil
@@ -73,13 +72,13 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 	case "ENUM", "SET":
 		// Handle ENUM/SET as string with special metadata
 		metadataMap := map[string]string{
-			"sql.database_type_name": colType.DatabaseTypeName(),
-			"sql.column_name":        colType.Name(),
+			"sql.database_type_name": colType.DatabaseTypeName,
+			"sql.column_name":        colType.Name,
 			"mysql.is_enum_set":      "true",
 		}
 
-		if length, ok := colType.Length(); ok {
-			metadataMap["sql.length"] = fmt.Sprintf("%d", length)
+		if colType.Length != nil {
+			metadataMap["sql.length"] = fmt.Sprintf("%d", *colType.Length)
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
@@ -87,8 +86,8 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 
 	case "TINYINT":
 		metadataMap := map[string]string{
-			"sql.database_type_name": colType.DatabaseTypeName(),
-			"sql.column_name":        colType.Name(),
+			"sql.database_type_name": colType.DatabaseTypeName,
+			"sql.column_name":        colType.Name,
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
@@ -97,7 +96,7 @@ func (m *mySQLTypeConverter) ConvertColumnType(colType *sql.ColumnType) (arrow.D
 
 	default:
 		// Fall back to default conversion for standard types
-		return m.DefaultTypeConverter.ConvertColumnType(colType)
+		return m.DefaultTypeConverter.ConvertRawColumnType(colType)
 	}
 }
 
