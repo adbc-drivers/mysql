@@ -17,11 +17,11 @@ module github.com/adbc-drivers/mysql
 go 1.24.4
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250903011820-9af7d428769b
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250902013152-2511d884097d
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250905044430-f1889d1e62d7
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250905044430-f1889d1e62d7
 	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250829042004-8c5a40a2a05c
 	github.com/apache/arrow-adbc/go/adbc v1.7.0
-	github.com/apache/arrow-go/v18 v18.4.0
+	github.com/apache/arrow-go/v18 v18.4.1
 	github.com/go-ext/variant v1.2.4
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/stretchr/testify v1.11.1

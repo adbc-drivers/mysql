@@ -196,7 +196,7 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 
 // mysqlConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
 type mysqlConnectionImpl struct {
-	*sqlwrapper.ConnectionImpl // Embed sqlwrapper connection for all standard functionality
+	*sqlwrapper.ConnectionImplBase // Embed sqlwrapper connection for all standard functionality
 
 	version string
 }
@@ -216,11 +216,11 @@ type mysqlConnectionFactory struct{}
 // CreateConnection implements sqlwrapper.ConnectionFactory
 func (f *mysqlConnectionFactory) CreateConnection(
 	ctx context.Context,
-	conn *sqlwrapper.ConnectionImpl,
-) (driverbase.ConnectionImpl, error) {
+	conn *sqlwrapper.ConnectionImplBase,
+) (sqlwrapper.ConnectionImpl, error) {
 	// Wrap the pre-built sqlwrapper connection with MySQL-specific functionality
 	return &mysqlConnectionImpl{
-		ConnectionImpl: conn,
+		ConnectionImplBase: conn,
 	}, nil
 }
 

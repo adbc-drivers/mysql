@@ -45,8 +45,8 @@ func getDSN(t *testing.T) string {
 }
 
 // Helper function to create Arrow records from string data
-func createTestRecords(allocator memory.Allocator, schema *arrow.Schema, batches [][]string) []arrow.Record {
-	records := make([]arrow.Record, len(batches))
+func createTestRecords(allocator memory.Allocator, schema *arrow.Schema, batches [][]string) []arrow.RecordBatch {
+	records := make([]arrow.RecordBatch, len(batches))
 
 	for i, batch := range batches {
 		// Build string array for this batch
@@ -60,7 +60,7 @@ func createTestRecords(allocator memory.Allocator, schema *arrow.Schema, batches
 		defer stringArray.Release()
 
 		// Create record for this batch
-		records[i] = array.NewRecord(schema, []arrow.Array{stringArray}, int64(len(batch)))
+		records[i] = array.NewRecordBatch(schema, []arrow.Array{stringArray}, int64(len(batch)))
 	}
 
 	return records
@@ -109,7 +109,7 @@ func TestDriver(t *testing.T) {
 
 	// Test that Bind works with empty record
 	emptySchema := arrow.NewSchema(nil, nil)
-	emptyRec := array.NewRecord(emptySchema, []arrow.Array{}, 0)
+	emptyRec := array.NewRecordBatch(emptySchema, []arrow.Array{}, 0)
 	defer emptyRec.Release()
 
 	// Bind should work with empty record (no-op)
@@ -147,7 +147,7 @@ func TestDriver(t *testing.T) {
 	hasNext := reader.Next()
 	require.True(t, hasNext, "Should have at least one batch")
 
-	record := reader.Record()
+	record := reader.RecordBatch()
 	require.NotNil(t, record)
 	require.Equal(t, int64(2), record.NumRows()) // Should have 2 rows
 	require.Equal(t, int64(2), record.NumCols()) // Should have 2 columns
@@ -191,7 +191,7 @@ func TestDriver(t *testing.T) {
 		{Name: "val", Type: arrow.BinaryTypes.String, Nullable: false},
 	}, nil)
 
-	bindRecord := array.NewRecord(bindSchema, []arrow.Array{stringArray}, 3)
+	bindRecord := array.NewRecordBatch(bindSchema, []arrow.Array{stringArray}, 3)
 	defer bindRecord.Release()
 
 	// Bind the record
@@ -214,7 +214,7 @@ func TestDriver(t *testing.T) {
 	hasNext = reader2.Next()
 	require.True(t, hasNext)
 
-	countRecord := reader2.Record()
+	countRecord := reader2.RecordBatch()
 	require.NotNil(t, countRecord)
 
 	countCol := countRecord.Column(0).(*array.Int64)
@@ -268,7 +268,7 @@ func TestDriver(t *testing.T) {
 	hasNext = reader3.Next()
 	require.True(t, hasNext)
 
-	finalCountRecord := reader3.Record()
+	finalCountRecord := reader3.RecordBatch()
 	require.NotNil(t, finalCountRecord)
 
 	finalCountCol := finalCountRecord.Column(0).(*array.Int64)
@@ -650,7 +650,7 @@ func TestQueryBatchSizeConfiguration(t *testing.T) {
 		{Name: "value", Type: arrow.BinaryTypes.String, Nullable: false},
 	}, nil)
 
-	bindRecord := array.NewRecord(bindSchema, []arrow.Array{stringArray}, 100)
+	bindRecord := array.NewRecordBatch(bindSchema, []arrow.Array{stringArray}, 100)
 	defer bindRecord.Release()
 
 	err = stmt.Bind(context.Background(), bindRecord)
@@ -696,7 +696,7 @@ func TestQueryBatchSizeConfiguration(t *testing.T) {
 
 			// Read all batches and count them
 			for reader.Next() {
-				record := reader.Record()
+				record := reader.RecordBatch()
 				require.NotNil(t, record)
 
 				batchRows := record.NumRows()
@@ -848,7 +848,7 @@ func TestTypedBuilderHandling(t *testing.T) {
 
 	// Read all batches and verify data
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		require.NotNil(t, record)
 
 		batchRows := record.NumRows()
@@ -988,7 +988,7 @@ func TestSQLNullableTypesHandling(t *testing.T) {
 
 	for reader.Next() {
 		batchCount++
-		record := reader.Record()
+		record := reader.RecordBatch()
 		require.NotNil(t, record, "Record should not be nil")
 
 		rowsInBatch := record.NumRows()
@@ -1084,7 +1084,7 @@ func TestExtendedArrowArrayTypes(t *testing.T) {
 	recordCount := 0
 	for reader.Next() {
 		recordCount++
-		record := reader.Record()
+		record := reader.RecordBatch()
 		require.NotNil(t, record, "Record should not be nil")
 		require.Equal(t, int64(1), record.NumRows(), "Should have 1 row")
 		require.Equal(t, int64(7), record.NumCols(), "Should have 7 columns")
@@ -1177,7 +1177,7 @@ func TestTemporalAndDecimalExtraction(t *testing.T) {
 
 	totalRows := 0
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		require.NotNil(t, record, "Record should not be nil")
 
 		rowsInBatch := int(record.NumRows())
@@ -1335,7 +1335,7 @@ func TestMySQLCustomTypeConverter(t *testing.T) {
 
 	totalRows := 0
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		require.NotNil(t, record, "Record should not be nil")
 
 		rowsInBatch := int(record.NumRows())
@@ -1462,14 +1462,14 @@ func TestMySQLTypeConverterEdgeCases(t *testing.T) {
 
 	totalRows := 0
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		require.NotNil(t, record, "Record should not be nil")
 
 		rowsInBatch := int(record.NumRows())
 		totalRows += rowsInBatch
 
 		// Test NULL handling
-		for rowIdx := 0; rowIdx < rowsInBatch; rowIdx++ {
+		for rowIdx := range rowsInBatch {
 			t.Logf("Testing edge case row %d:", rowIdx)
 
 			// Test NULL JSON
