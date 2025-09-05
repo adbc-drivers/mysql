@@ -33,7 +33,7 @@ class MySQLQuirks(model.DriverQuirks):
         statement_bulk_ingest=True,
         statement_bulk_ingest_catalog=True,
         statement_bulk_ingest_schema=True,
-        statement_bulk_ingest_temporary=True,
+        statement_bulk_ingest_temporary=False,
         statement_execute_schema=True,
         statement_get_parameter_schema=False,
         current_catalog="db",  # MySQL treats databases as catalogs (also JDBC behavior)
@@ -67,7 +67,7 @@ class MySQLQuirks(model.DriverQuirks):
             )
             and table_name.lower() in error_str
         )
-        
+
     def quote_identifier(self, *identifiers: str) -> str:
         # Filter out None and empty values (MySQL doesn't have separate schemas/catalogs)
         valid_identifiers = [
@@ -78,10 +78,10 @@ class MySQLQuirks(model.DriverQuirks):
         return ".".join(valid_identifiers)
 
     def quote_one_identifier(self, identifier: str) -> str:
-       if identifier is None:
-           return None
-       identifier = identifier.replace("`", "``")
-       return f"`{identifier}`"
+        if identifier is None:
+            return None
+        identifier = identifier.replace("`", "``")
+        return f"`{identifier}`"
 
     def split_statement(self, statement: str) -> list[str]:
         return quirks.split_statement(statement)
