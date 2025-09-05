@@ -34,7 +34,7 @@ jobs:
       dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
       driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
     with:
-      driver: red-o
+      driver: mysql
       subdir: .
 
   validate:
@@ -44,7 +44,7 @@ jobs:
       driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
       validation_private_key: ${{ secrets.VALIDATION_DEPLOY_KEY }}
     with:
-      driver: red-o
+      driver: mysql
       subdir: .
 
   release:
