@@ -16,12 +16,12 @@ package mysql
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
+	sqlwrapper "github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -71,7 +71,7 @@ func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes [
 }
 
 // ExecuteBulkIngest performs MySQL bulk ingest using INSERT statements
-func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sql.Conn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
+func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	if stream == nil {
 		return -1, c.Base().ErrorHelper.InvalidArgument("stream cannot be nil")
 	}
@@ -105,14 +105,14 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sql.C
 
 	// Process each record batch in the stream
 	for stream.Next() {
-		record := stream.Record()
+		record := stream.RecordBatch()
 
 		// Insert each row
 		rowsInBatch := int(record.NumRows())
-		for rowIdx := 0; rowIdx < rowsInBatch; rowIdx++ {
+		for rowIdx := range rowsInBatch {
 			params := make([]any, record.NumCols())
 
-			for colIdx := 0; colIdx < int(record.NumCols()); colIdx++ {
+			for colIdx := range int(record.NumCols()) {
 				arr := record.Column(colIdx)
 				field := schema.Field(colIdx)
 
@@ -144,7 +144,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sql.C
 }
 
 // createTableIfNeeded creates the table based on the ingest mode
-func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql.Conn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
+func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
 	switch options.Mode {
 	case adbc.OptionValueIngestModeCreate:
 		// Create the table (fail if exists)
@@ -165,7 +165,7 @@ func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 }
 
 // createTable creates a MySQL table from Arrow schema
-func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sql.Conn, tableName string, schema *arrow.Schema, ifNotExists bool) error {
+func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool) error {
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("CREATE TABLE ")
 	if ifNotExists {
@@ -196,7 +196,7 @@ func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sql.Conn, t
 }
 
 // dropTable drops a MySQL table
-func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sql.Conn, tableName string) error {
+func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string) error {
 	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tableName)
 	_, err := conn.ExecContext(ctx, dropSQL)
 	return err
