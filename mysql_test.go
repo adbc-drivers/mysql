@@ -1469,7 +1469,7 @@ func TestMySQLTypeConverterEdgeCases(t *testing.T) {
 		totalRows += rowsInBatch
 
 		// Test NULL handling
-		for rowIdx := 0; rowIdx < rowsInBatch; rowIdx++ {
+		for rowIdx := range rowsInBatch {
 			t.Logf("Testing edge case row %d:", rowIdx)
 
 			// Test NULL JSON
