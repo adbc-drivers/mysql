@@ -17,7 +17,7 @@ module github.com/adbc-drivers/mysql
 go 1.24.4
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250905044430-f1889d1e62d7
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250905072113-b71f3df51f8d
 	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250905044430-f1889d1e62d7
 	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250829042004-8c5a40a2a05c
 	github.com/apache/arrow-adbc/go/adbc v1.7.0
