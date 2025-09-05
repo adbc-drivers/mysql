@@ -97,17 +97,17 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 	ORDER BY ORDINAL_POSITION`
 
-	var args []interface{}
+	var args []any
 	if catalog != nil && *catalog != "" {
 		// Use specified catalog (database)
-		args = []interface{}{*catalog, tableName}
+		args = []any{*catalog, tableName}
 	} else {
 		// Use current database
 		currentDB, err := c.GetCurrentCatalog()
 		if err != nil {
 			return nil, c.Base().ErrorHelper.IO("failed to get current database: %v", err)
 		}
-		args = []interface{}{currentDB, tableName}
+		args = []any{currentDB, tableName}
 	}
 
 	// Execute query to get column information
