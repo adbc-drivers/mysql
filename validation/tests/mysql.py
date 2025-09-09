@@ -25,7 +25,7 @@ class MySQLQuirks(model.DriverQuirks):
     vendor_version = "9.4.0 (MySQL Community Server - GPL)"
     short_version = "9.4"
     features = model.DriverFeatures(
-        connection_get_table_schema=False,
+        connection_get_table_schema=True,
         connection_transactions=False,
         get_objects_constraints_foreign=False,
         get_objects_constraints_primary=False,
@@ -34,7 +34,7 @@ class MySQLQuirks(model.DriverQuirks):
         statement_bulk_ingest_catalog=False,
         statement_bulk_ingest_schema=False,
         statement_bulk_ingest_temporary=False,
-        statement_execute_schema=False,
+        statement_execute_schema=True,
         statement_get_parameter_schema=False,
         current_catalog="db",  # MySQL treats databases as catalogs (also JDBC behavior)
         current_schema="",  # getSchemas() returns empty - no schema concept (also JDBC behavior)
