@@ -3,18 +3,11 @@
     "children": [
         {
             "name": "res",
-            "format": "+j",
+            "format": "u",
             "flags": ["nullable"],
-            "metadata": [
-                {
-                    "key": "sql.database_type_name",
-                    "value": "JSON"
-                },
-                {
-                    "key": "sql.column_name",
-                    "value": "res"
-                }
-            ]
+            "metadata": {
+                "ARROW:extension:name": "arrow.json"
+            }
         }
     ]
 }
