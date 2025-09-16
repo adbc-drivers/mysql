@@ -1324,17 +1324,16 @@ func TestMySQLCustomTypeConverter(t *testing.T) {
 			// Test JSON column (custom handling in ConvertSQLToArrow)
 			jsonCol := record.Column(1).(*extensions.JSONArray)
 			if !jsonCol.IsNull(rowIdx) {
-				// XXX: the value seems to be wrong (it seems to be the repr of a Go []byte and not the actual string)
-				jsonValue := jsonCol.ValueStr(rowIdx)
+				jsonValue := jsonCol.Value(rowIdx)
 				t.Logf("  JSON: %#v", jsonValue)
 
-				// // Check for content specific to each row
-				// switch rowIdx {
-				// case 0:
-				// 	require.Equal(t, jsonValue, map[string]any{"key": "value", "number": float64(42)}, "First JSON should match inserted value: %s", jsonValue)
-				// case 1:
-				// 	require.Contains(t, jsonValue, "array", "Second JSON should contain 'array'")
-				// }
+				// Check for content specific to each row
+				switch rowIdx {
+				case 0:
+					require.Equal(t, map[string]any{"key": "value", "number": float64(42)}, jsonValue, "First JSON should match inserted value: %s", jsonValue)
+				case 1:
+					require.Contains(t, jsonValue, "array", "Second JSON should contain 'array'")
+				}
 			}
 
 			// Test ENUM column (custom handling in ConvertSQLToArrow)
@@ -1456,8 +1455,7 @@ func TestMySQLTypeConverterEdgeCases(t *testing.T) {
 			if !jsonEmptyCol.IsNull(rowIdx) {
 				jsonEmpty := jsonEmptyCol.(*extensions.JSONArray).ValueStr(rowIdx)
 				t.Logf("  Empty JSON: %s", jsonEmpty)
-				// XXX: ditto
-				// require.True(t, jsonEmpty == "{}" || jsonEmpty == "[]" || jsonEmpty == "null", "Should handle empty JSON")
+				require.True(t, jsonEmpty == "{}" || jsonEmpty == "[]" || jsonEmpty == "null", "Should handle empty JSON")
 			}
 
 			// Test invalid JSON in TEXT field (should be handled as regular string)
@@ -1481,8 +1479,7 @@ func TestMySQLTypeConverterEdgeCases(t *testing.T) {
 				largeJson := largeJsonCol.ValueStr(rowIdx)
 				t.Logf("  Large JSON length: %d chars", len(largeJson))
 				require.Greater(t, len(largeJson), 10, "Large JSON should be substantial")
-				// XXX: ditto
-				// require.True(t, largeJson[0] == '{', "Large JSON should be valid JSON object")
+				require.True(t, largeJson[0] == '{', "Large JSON should be valid JSON object")
 			}
 		}
 	}

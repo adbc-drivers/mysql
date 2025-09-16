@@ -27,6 +27,7 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/go-ext/variant"
 )
@@ -43,12 +44,9 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 
 	switch typeName {
 	case "JSON":
-		// Convert MySQL JSON to Arrow string with special metadata
-		// TODO: we should use arrow.json extension type
 		metadataMap := map[string]string{
 			"sql.database_type_name": colType.DatabaseTypeName,
 			"sql.column_name":        colType.Name,
-			"mysql.is_json":          "true",
 		}
 
 		// Add length if available
@@ -57,7 +55,14 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return arrow.BinaryTypes.String, nullable, metadata, nil
+
+		// Convert MySQL JSON to Arrow JSON extension type
+		jsonType, err := extensions.NewJSONType(arrow.BinaryTypes.String)
+		if err != nil {
+			return nil, false, metadata, fmt.Errorf("failed to create JSON extension type: %w", err)
+		}
+
+		return jsonType, nullable, metadata, nil
 
 	case "GEOMETRY", "POINT", "LINESTRING", "POLYGON", "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON":
 		// Convert MySQL spatial types to binary with spatial metadata
@@ -104,23 +109,16 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 func (m *mySQLTypeConverter) ConvertSQLToArrow(sqlValue any, field *arrow.Field) (any, error) {
 	// Handle MySQL-specific type conversions
 	switch field.Type.(type) {
-	case *arrow.StringType:
-		// Handle MySQL JSON types specially
-		if isJSON, ok := field.Metadata.GetValue("mysql.is_json"); ok && isJSON == "true" {
-			// For JSON columns, we might want to validate or pretty-format JSON
-			switch v := sqlValue.(type) {
-			case []byte:
-				// MySQL returns JSON as []byte, convert to string
-				return string(v), nil
-			case string:
-				return v, nil
-			default:
-				return fmt.Sprintf("%v", sqlValue), nil
-			}
+	case *extensions.JSONType:
+		// Handle JSON extension type conversion
+		switch v := sqlValue.(type) {
+		case []byte:
+			return string(v), nil
+		case string:
+			return v, nil
+		default:
+			return fmt.Sprintf("%v", sqlValue), nil
 		}
-		// Fall through to default for non-JSON strings
-		return m.DefaultTypeConverter.ConvertSQLToArrow(sqlValue, field)
-
 	case *arrow.BinaryType:
 		// Handle MySQL spatial types
 		if isSpatial, ok := field.Metadata.GetValue("mysql.is_spatial"); ok && isSpatial == "true" {
@@ -151,16 +149,11 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 
 	// Handle MySQL-specific Arrow to Go conversions
 	switch a := arrowArray.(type) {
-	case *array.String:
-		// Check if this is a JSON column by looking at field metadata
-		if isJSON, ok := field.Metadata.GetValue("mysql.is_json"); ok && isJSON == "true" {
-			// For JSON fields, parse to variant
-			jsonStr := a.Value(index)
-			v := variant.New(jsonStr)
-			return v, nil
-		}
-		// Fall through to default string handling
-		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
+	case *extensions.JSONArray:
+		// Handle JSON extension type arrays
+		jsonStr := a.ValueStr(index)
+		v := variant.New(jsonStr)
+		return v, nil
 
 	case *array.Binary:
 		// Check if this is a spatial column
