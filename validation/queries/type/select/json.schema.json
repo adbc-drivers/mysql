@@ -1,0 +1,20 @@
+{
+    "format": "+s",
+    "children": [
+        {
+            "name": "res",
+            "format": "+j",
+            "flags": ["nullable"],
+            "metadata": [
+                {
+                    "key": "sql.database_type_name",
+                    "value": "JSON"
+                },
+                {
+                    "key": "sql.column_name",
+                    "value": "res"
+                }
+            ]
+        }
+    ]
+}
