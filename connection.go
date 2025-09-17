@@ -185,6 +185,16 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	return arrow.NewSchema(fields, nil), nil
 }
 
+// ListTableTypes implements driverbase.TableTypeLister interface
+func (c *mysqlConnectionImpl) ListTableTypes(ctx context.Context) ([]string, error) {
+	// MySQL supports these standard table types
+	return []string{
+		"BASE TABLE",  // Regular tables
+		"VIEW",        // Views
+		"SYSTEM VIEW", // System/information schema views
+	}, nil
+}
+
 // ExecuteBulkIngest performs MySQL bulk ingest using INSERT statements
 func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	if stream == nil {
