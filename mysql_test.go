@@ -356,7 +356,8 @@ func (s *MySQLTests) TestSelect() {
 			enum_col ENUM('active', 'inactive'),
 			point_col POINT,
 			polygon_col POLYGON,
-			geometry_col GEOMETRY
+			geometry_col GEOMETRY,
+			bit_col BIT(8)
 		)
 	`))
 	_, err := s.stmt.ExecuteUpdate(s.ctx)
@@ -369,7 +370,8 @@ func (s *MySQLTests) TestSelect() {
 			'{"key": "value", "number": 42}', 'active',
 			ST_GeomFromText('POINT(1 2)'),
 			ST_GeomFromText('POLYGON((0 0, 0 3, 3 3, 3 0, 0 0))'),
-			ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)')
+			ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+			b'10101010'
 		)
 	`))
 	_, err = s.stmt.ExecuteUpdate(s.ctx)
@@ -575,6 +577,22 @@ func (s *MySQLTests) TestSelect() {
 				},
 			}, nil),
 			expected: `[{"shape": "AAAAAAECAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAQA=="}]`,
+		},
+		{
+			name:  "bit8",
+			query: "SELECT bit_col AS bitvalue FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "bitvalue",
+					Type:     arrow.BinaryTypes.Binary,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "bitvalue",
+						"sql.database_type_name": "BIT",
+					}),
+				},
+			}, nil),
+			expected: `[{"bitvalue": "qg=="}]`,
 		},
 	} {
 		s.Run(testCase.name, func() {

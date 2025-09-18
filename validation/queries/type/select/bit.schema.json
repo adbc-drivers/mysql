@@ -1,0 +1,14 @@
+{
+    "format": "+s",
+    "children": [
+        {
+            "name": "res",
+            "format": "z",
+            "flags": ["nullable"],
+            "metadata": {
+                "sql.database_type_name": "BIT"
+            }
+        }
+    ]
+ }
+ 

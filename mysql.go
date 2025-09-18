@@ -64,6 +64,20 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 
 		return jsonType, nullable, metadata, nil
 
+	case "BIT":
+		// Handle BIT type as binary data
+		metadataMap := map[string]string{
+			"sql.database_type_name": colType.DatabaseTypeName,
+			"sql.column_name":        colType.Name,
+		}
+
+		if colType.Length != nil {
+			metadataMap["sql.length"] = fmt.Sprintf("%d", *colType.Length)
+		}
+
+		metadata := arrow.MetadataFrom(metadataMap)
+		return arrow.BinaryTypes.Binary, nullable, metadata, nil
+
 	case "GEOMETRY", "POINT", "LINESTRING", "POLYGON", "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON":
 		// Convert MySQL spatial types to binary with spatial metadata
 		// TODO: we should use geoarrow extension types if applicable
@@ -120,6 +134,18 @@ func (m *mySQLTypeConverter) ConvertSQLToArrow(sqlValue any, field *arrow.Field)
 			return fmt.Sprintf("%v", sqlValue), nil
 		}
 	case *arrow.BinaryType:
+		if dbTypeName, ok := field.Metadata.GetValue("sql.database_type_name"); ok && dbTypeName == "BIT" {
+			// For BIT types, convert various formats to binary data
+			switch v := sqlValue.(type) {
+			case []byte:
+				return v, nil
+			case string:
+				return []byte(v), nil
+			default:
+				return []byte(fmt.Sprintf("%v", sqlValue)), nil
+			}
+		}
+
 		// Handle MySQL spatial types
 		if isSpatial, ok := field.Metadata.GetValue("mysql.is_spatial"); ok && isSpatial == "true" {
 			// For spatial types, ensure we preserve binary data correctly
@@ -156,6 +182,13 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		return v, nil
 
 	case *array.Binary:
+		if dbTypeName, ok := field.Metadata.GetValue("sql.database_type_name"); ok && dbTypeName == "BIT" {
+			// For BIT fields, return the binary data as-is
+			// This preserves the exact bit representation from the database
+			bitData := a.Value(index)
+			return bitData, nil
+		}
+
 		// Check if this is a spatial column
 		if isSpatial, ok := field.Metadata.GetValue("mysql.is_spatial"); ok && isSpatial == "true" {
 			// For spatial fields, return the binary data as-is
