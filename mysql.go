@@ -202,6 +202,9 @@ var _ driverbase.DbObjectsEnumerator = (*mysqlConnectionImpl)(nil)
 // implements CurrentNameSpacer interface
 var _ driverbase.CurrentNamespacer = (*mysqlConnectionImpl)(nil)
 
+// implements TableTypeLister interface
+var _ driverbase.TableTypeLister = (*mysqlConnectionImpl)(nil)
+
 // mysqlConnectionFactory creates MySQL connections
 type mysqlConnectionFactory struct{}
 

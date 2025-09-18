@@ -14,1478 +14,652 @@
 
 package mysql_test
 
-// TODO (https://github.com/adbc-drivers/driverbase-go/issues/27): leverage Go validation suite for more comprehensive testing
-
 import (
+	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
-	"strconv"
+	"strings"
 	"testing"
 
-	"github.com/adbc-drivers/driverbase-go/testutil"
+	"github.com/adbc-drivers/driverbase-go/validation"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	mysql "github.com/adbc-drivers/mysql"
 )
 
-// getDSN returns the MySQL DSN for testing, using environment variable or default
-func getDSN(t *testing.T) string {
-	// You can set MYSQL_DSN environment variable for custom connection
-	// Default assumes local MySQL with root/password setup
-	if dsn := os.Getenv("MYSQL_DSN"); dsn != "" {
-		return dsn
-	}
-	t.Skip("Set MYSQL_DSN")
-	return ""
+// MySQLQuirks implements validation.DriverQuirks for MySQL ADBC driver
+type MySQLQuirks struct {
+	dsn string
+	mem *memory.CheckedAllocator
 }
 
-// Helper function to create Arrow records from string data
-func createTestRecords(allocator memory.Allocator, schema *arrow.Schema, batches [][]string) []arrow.RecordBatch {
-	records := make([]arrow.RecordBatch, len(batches))
-
-	for i, batch := range batches {
-		// Build string array for this batch
-		builder := array.NewStringBuilder(allocator)
-		defer builder.Release()
-
-		for _, value := range batch {
-			builder.Append(value)
-		}
-		stringArray := builder.NewArray()
-		defer stringArray.Release()
-
-		// Create record for this batch
-		records[i] = array.NewRecordBatch(schema, []arrow.Array{stringArray}, int64(len(batch)))
-	}
-
-	return records
+func (q *MySQLQuirks) SetupDriver(t *testing.T) adbc.Driver {
+	q.mem = memory.NewCheckedAllocator(memory.DefaultAllocator)
+	return mysql.NewDriver(q.mem)
 }
 
-func TestDriver(t *testing.T) {
-	dsn := getDSN(t)
+func (q *MySQLQuirks) TearDownDriver(t *testing.T, _ adbc.Driver) {
+	q.mem.AssertSize(t, 0)
+}
 
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// create table
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_driver (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			val VARCHAR(20)
-		)
-	`)
-	require.NoError(t, err)
-
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// insert dummy data
-	err = stmt.SetSqlQuery(`
-	INSERT INTO adbc_test_driver (val) VALUES ('apple'), ('banana')
-`)
-	require.NoError(t, err)
-
-	count, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(2), count)
-
-	// Test that Bind works with empty record
-	emptySchema := arrow.NewSchema(nil, nil)
-	emptyRec := array.NewRecordBatch(emptySchema, []arrow.Array{}, 0)
-	defer emptyRec.Release()
-
-	// Bind should work with empty record (no-op)
-	err = stmt.Bind(context.Background(), emptyRec)
-	require.NoError(t, err)
-
-	// Test ExecuteSchema
-	err = stmt.SetSqlQuery("SELECT id, val FROM adbc_test_driver")
-	require.NoError(t, err)
-
-	// Cast to StatementExecuteSchema interface to access ExecuteSchema
-	schemaStmt, ok := stmt.(adbc.StatementExecuteSchema)
-	require.True(t, ok, "Statement should implement StatementExecuteSchema")
-
-	resultSchema, err := schemaStmt.ExecuteSchema(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 2, len(resultSchema.Fields()), "Should have 2 columns")
-	require.Equal(t, "id", resultSchema.Field(0).Name)
-	require.Equal(t, "val", resultSchema.Field(1).Name)
-
-	// Verify types are mapped correctly
-	require.Equal(t, "int32", resultSchema.Field(0).Type.String()) // INT -> int32
-	require.Equal(t, "utf8", resultSchema.Field(1).Type.String())  // VARCHAR -> utf8
-
-	// Test ExecuteQuery
-	err = stmt.SetSqlQuery("SELECT id, val FROM adbc_test_driver ORDER BY id")
-	require.NoError(t, err)
-
-	reader, rowCount, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(-1), rowCount) // Row count unknown until read
-	defer reader.Release()
-
-	// Verify we can read the data
-	hasNext := reader.Next()
-	require.True(t, hasNext, "Should have at least one batch")
-
-	record := reader.RecordBatch()
-	require.NotNil(t, record)
-	require.Equal(t, int64(2), record.NumRows()) // Should have 2 rows
-	require.Equal(t, int64(2), record.NumCols()) // Should have 2 columns
-
-	// Verify data values
-	idCol := record.Column(0).(*array.Int32)
-	valCol := record.Column(1).(*array.String)
-
-	require.Equal(t, int32(1), idCol.Value(0))  // First row id
-	require.Equal(t, int32(2), idCol.Value(1))  // Second row id (AUTO_INCREMENT)
-	require.Equal(t, "apple", valCol.Value(0))  // First row val
-	require.Equal(t, "banana", valCol.Value(1)) // Second row val
-
-	// Should be no more batches for this small result
-	hasNext = reader.Next()
-	require.False(t, hasNext, "Should not have more batches")
-
-	// Test Bind parameters for bulk insert
-	err = stmt.SetSqlQuery("INSERT INTO adbc_test_driver (val) VALUES (?)")
-	require.NoError(t, err)
-
-	err = stmt.Prepare(context.Background())
-	require.NoError(t, err)
-
-	// Create Arrow record with bulk data
-	allocator := memory.DefaultAllocator
-
-	// Build string array with fruit names
-	stringBuilder := array.NewStringBuilder(allocator)
-	defer stringBuilder.Release()
-
-	fruits := []string{"orange", "grape", "kiwi"}
-	for _, fruit := range fruits {
-		stringBuilder.Append(fruit)
+func (q *MySQLQuirks) DatabaseOptions() map[string]string {
+	return map[string]string{
+		adbc.OptionKeyURI: q.dsn,
 	}
-	stringArray := stringBuilder.NewArray()
-	defer stringArray.Release()
+}
 
-	// Create schema and record for bind parameters
-	bindSchema := arrow.NewSchema([]arrow.Field{
-		{Name: "val", Type: arrow.BinaryTypes.String, Nullable: false},
-	}, nil)
-
-	bindRecord := array.NewRecordBatch(bindSchema, []arrow.Array{stringArray}, 3)
-	defer bindRecord.Release()
-
-	// Bind the record
-	err = stmt.Bind(context.Background(), bindRecord)
-	require.NoError(t, err)
-
-	// Execute the bulk insert
-	insertedCount, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(3), insertedCount) // Should insert 3 rows
-
-	// Verify the data was inserted
-	err = stmt.SetSqlQuery("SELECT COUNT(*) FROM adbc_test_driver")
-	require.NoError(t, err)
-
-	reader2, _, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	defer reader2.Release()
-
-	hasNext = reader2.Next()
-	require.True(t, hasNext)
-
-	countRecord := reader2.RecordBatch()
-	require.NotNil(t, countRecord)
-
-	countCol := countRecord.Column(0).(*array.Int64)
-	totalRows := countCol.Value(0)
-	require.Equal(t, int64(5), totalRows) // 2 original + 3 new = 5 total
-
-	// Test BindStream for streaming bulk insert
-	err = stmt.SetSqlQuery("INSERT INTO adbc_test_driver (val) VALUES (?)")
-	require.NoError(t, err)
-
-	// Create test data and schema
-	streamSchema := arrow.NewSchema([]arrow.Field{
-		{Name: "val", Type: arrow.BinaryTypes.String, Nullable: false},
-	}, nil)
-
-	batches := [][]string{
-		{"cherry", "peach"},    // First batch: 2 rows
-		{"mango", "pineapple"}, // Second batch: 2 rows
+func (q *MySQLQuirks) CreateSampleTable(tableName string, r arrow.RecordBatch) error {
+	// Use standard database/sql to create table directly
+	db, err := sql.Open("mysql", q.dsn)
+	if err != nil {
+		return err
 	}
-
-	// Create Arrow records using helper function
-	testRecords := createTestRecords(allocator, streamSchema, batches)
 	defer func() {
-		for _, rec := range testRecords {
-			rec.Release()
-		}
+		err = errors.Join(err, db.Close())
 	}()
 
-	// Use Arrow's built-in RecordReader
-	streamReader, err := array.NewRecordReader(streamSchema, testRecords)
-	require.NoError(t, err)
-	defer streamReader.Release()
+	// Drop table if it exists first to ensure clean state
+	_, err = db.Exec("DROP TABLE IF EXISTS " + tableName)
+	if err != nil {
+		return fmt.Errorf("failed to drop existing table: %w", err)
+	}
 
-	// Use BindStream
-	err = stmt.BindStream(context.Background(), streamReader)
-	require.NoError(t, err)
+	// Build CREATE TABLE statement based on Arrow schema
+	var createQuery strings.Builder
+	createQuery.WriteString("CREATE TABLE ")
+	createQuery.WriteString(tableName)
+	createQuery.WriteString(" (")
 
-	// Execute the streaming bulk insert
-	streamInsertedCount, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(4), streamInsertedCount) // Should insert 4 rows (2 batches × 2 rows)
-
-	// Verify final count
-	err = stmt.SetSqlQuery("SELECT COUNT(*) FROM adbc_test_driver")
-	require.NoError(t, err)
-
-	reader3, _, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	defer reader3.Release()
-
-	hasNext = reader3.Next()
-	require.True(t, hasNext)
-
-	finalCountRecord := reader3.RecordBatch()
-	require.NotNil(t, finalCountRecord)
-
-	finalCountCol := finalCountRecord.Column(0).(*array.Int64)
-	finalTotalRows := finalCountCol.Value(0)
-	require.Equal(t, int64(9), finalTotalRows) // 5 previous + 4 new = 9 total
-}
-
-// TestSchemaMetadata tests that SQL type metadata is included in Arrow schema
-func TestSchemaMetadata(t *testing.T) {
-	dsn := getDSN(t)
-
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with various column types
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_metadata (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			name VARCHAR(100) NOT NULL,
-			price DECIMAL(10,2),
-			created_at TIMESTAMP
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Test ExecuteSchema to get metadata
-	err = stmt.SetSqlQuery("SELECT id, name, price, created_at FROM adbc_test_metadata")
-	require.NoError(t, err)
-
-	schemaStmt, ok := stmt.(adbc.StatementExecuteSchema)
-	require.True(t, ok, "Statement should implement StatementExecuteSchema")
-
-	schema, err := schemaStmt.ExecuteSchema(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 4, len(schema.Fields()), "Should have 4 columns")
-
-	// Check that each field has SQL metadata
+	schema := r.Schema()
 	for i, field := range schema.Fields() {
-		t.Logf("Field %d: %s (type: %s)", i, field.Name, field.Type.String())
+		if i > 0 {
+			createQuery.WriteString(", ")
+		}
+		createQuery.WriteString(field.Name)
+		createQuery.WriteString(" ")
 
-		// Verify metadata exists
-		require.NotNil(t, field.Metadata, "Field should have metadata")
+		// Map Arrow types to MySQL types
+		switch field.Type.ID() {
+		case arrow.INT32:
+			createQuery.WriteString("INT")
+		case arrow.INT64:
+			createQuery.WriteString("BIGINT")
+		case arrow.STRING:
+			createQuery.WriteString("VARCHAR(255)")
+		case arrow.FLOAT32:
+			createQuery.WriteString("FLOAT")
+		case arrow.FLOAT64:
+			createQuery.WriteString("DOUBLE")
+		case arrow.BOOL:
+			createQuery.WriteString("BOOLEAN")
+		default:
+			createQuery.WriteString("TEXT") // Default fallback
+		}
 
-		// Check for SQL database type name
-		dbTypeName, ok := field.Metadata.GetValue("sql.database_type_name")
-		require.True(t, ok, "Should have sql.database_type_name metadata")
-		require.NotEmpty(t, dbTypeName, "Database type name should not be empty")
+		if !field.Nullable {
+			createQuery.WriteString(" NOT NULL")
+		}
+	}
+	createQuery.WriteString(")")
 
-		t.Logf("  SQL database type: %s", dbTypeName)
+	_, err = db.Exec(createQuery.String())
+	if err != nil {
+		return fmt.Errorf("failed to create table: %w", err)
+	}
 
-		// Check for column name
-		colName, ok := field.Metadata.GetValue("sql.column_name")
-		require.True(t, ok, "Should have sql.column_name metadata")
-		require.Equal(t, field.Name, colName, "Column name in metadata should match field name")
+	// Insert data from Arrow record
+	if r.NumRows() > 0 {
+		// Insert each row separately to handle NULL values correctly
+		for row := range r.NumRows() {
+			var insertQuery strings.Builder
+			insertQuery.WriteString("INSERT INTO ")
+			insertQuery.WriteString(tableName)
+			insertQuery.WriteString(" VALUES (")
 
-		// Check type-specific metadata
-		switch field.Name {
-		case "name":
-			// VARCHAR should have length
-			if length, ok := field.Metadata.GetValue("sql.length"); ok {
-				t.Logf("  VARCHAR length: %s", length)
+			values := make([]interface{}, r.NumCols())
+			for col := range r.NumCols() {
+				column := r.Column(int(col))
+				if column.IsNull(int(row)) {
+					values[col] = nil
+				} else {
+					// Extract value based on column type
+					switch arr := column.(type) {
+					case *array.Int32:
+						values[col] = arr.Value(int(row))
+					case *array.Int64:
+						values[col] = arr.Value(int(row))
+					case *array.String:
+						values[col] = arr.Value(int(row))
+					case *array.Float32:
+						values[col] = arr.Value(int(row))
+					case *array.Float64:
+						values[col] = arr.Value(int(row))
+					case *array.Boolean:
+						values[col] = arr.Value(int(row))
+					default:
+						values[col] = fmt.Sprintf("%v", column)
+					}
+				}
 			}
-		case "price":
-			// DECIMAL should have precision and scale
-			if precision, ok := field.Metadata.GetValue("sql.precision"); ok {
-				t.Logf("  DECIMAL precision: %s", precision)
+
+			// Build placeholders and collect non-null values for prepared statement
+			var queryParams []interface{}
+			for i, val := range values {
+				if i > 0 {
+					insertQuery.WriteString(", ")
+				}
+				if val == nil {
+					insertQuery.WriteString("NULL")
+				} else {
+					insertQuery.WriteString("?")
+					queryParams = append(queryParams, val)
+				}
 			}
-			if scale, ok := field.Metadata.GetValue("sql.scale"); ok {
-				t.Logf("  DECIMAL scale: %s", scale)
+			insertQuery.WriteString(")")
+
+			_, err = db.Exec(insertQuery.String(), queryParams...)
+			if err != nil {
+				return fmt.Errorf("failed to insert row %d: %w", row, err)
 			}
 		}
 	}
 
-	t.Log("✅ Schema metadata test passed successfully")
+	return nil
 }
 
-// TestMySQLTypeConverter tests MySQL-specific type converter enhancements
-func TestMySQLTypeConverter(t *testing.T) {
-	dsn := getDSN(t)
+func (q *MySQLQuirks) DropTable(cnxn adbc.Connection, tblName string) error {
+	stmt, err := cnxn.NewStatement()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, stmt.Close())
+	}()
 
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with MySQL-specific types
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_mysql_types (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			data JSON,
-			status ENUM('active', 'inactive') DEFAULT 'active'
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Test ExecuteSchema to get MySQL-specific metadata
-	err = stmt.SetSqlQuery("SELECT id, data, status FROM adbc_test_mysql_types")
-	require.NoError(t, err)
-
-	schemaStmt, ok := stmt.(adbc.StatementExecuteSchema)
-	require.True(t, ok, "Statement should implement StatementExecuteSchema")
-
-	schema, err := schemaStmt.ExecuteSchema(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 3, len(schema.Fields()), "Should have 3 columns")
-
-	// Check MySQL-specific type enhancements
-	for i, field := range schema.Fields() {
-		t.Logf("Field %d: %s (type: %s)", i, field.Name, field.Type.String())
-
-		// Verify metadata exists
-		require.NotNil(t, field.Metadata, "Field should have metadata")
-
-		// Check for SQL database type name
-		dbTypeName, ok := field.Metadata.GetValue("sql.database_type_name")
-		require.True(t, ok, "Should have sql.database_type_name metadata")
-		t.Logf("  SQL database type: %s", dbTypeName)
-
-		// Check MySQL-specific enhancements
-		switch field.Name {
-		case "data":
-			require.Equal(t, "JSON", dbTypeName, "Should be JSON type")
-		case "status":
-			require.Equal(t, "ENUM", dbTypeName, "Should be ENUM type")
-		}
+	if err = stmt.SetSqlQuery("DROP TABLE IF EXISTS " + tblName); err != nil {
+		return err
 	}
 
-	t.Log("✅ MySQL type converter test passed successfully")
+	_, err = stmt.ExecuteUpdate(context.Background())
+	return err
 }
 
-// TestDecimalTypeHandling tests that DECIMAL types are properly converted to Arrow Decimal128
-func TestDecimalTypeHandling(t *testing.T) {
-	dsn := getDSN(t)
+func (q *MySQLQuirks) SampleTableSchemaMetadata(tblName string, dt arrow.DataType) arrow.Metadata {
+	// Return metadata that matches what our MySQL type converter actually returns
+	metadata := map[string]string{}
 
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with various DECIMAL types
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_decimals (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			price DECIMAL(10,2),
-			rate NUMERIC(5,4),
-			percentage DECIMAL(3,1)
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Test ExecuteSchema to get decimal type information
-	err = stmt.SetSqlQuery("SELECT id, price, rate, percentage FROM adbc_test_decimals")
-	require.NoError(t, err)
-
-	schemaStmt, ok := stmt.(adbc.StatementExecuteSchema)
-	require.True(t, ok, "Statement should implement StatementExecuteSchema")
-
-	schema, err := schemaStmt.ExecuteSchema(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 4, len(schema.Fields()), "Should have 4 columns")
-
-	// Check that DECIMAL fields are properly converted
-	expectedDecimals := map[string]struct {
-		precision int32
-		scale     int32
-	}{
-		"price":      {precision: 10, scale: 2},
-		"rate":       {precision: 5, scale: 4},
-		"percentage": {precision: 3, scale: 1},
+	switch dt.ID() {
+	case arrow.INT32:
+		metadata["sql.column_name"] = "ints"
+		metadata["sql.database_type_name"] = "int"
+		metadata["sql.precision"] = "10"
+		metadata["sql.scale"] = "0"
+	case arrow.INT64:
+		metadata["sql.column_name"] = "ints"
+		metadata["sql.database_type_name"] = "bigint"
+		metadata["sql.precision"] = "19"
+		metadata["sql.scale"] = "0"
+	case arrow.STRING:
+		metadata["sql.column_name"] = "strings"
+		metadata["sql.database_type_name"] = "varchar"
+		metadata["sql.length"] = "255"
+	case arrow.FLOAT32:
+		metadata["sql.column_name"] = "floats"
+		metadata["sql.database_type_name"] = "float"
+	case arrow.FLOAT64:
+		metadata["sql.column_name"] = "doubles"
+		metadata["sql.database_type_name"] = "double"
+	case arrow.BOOL:
+		metadata["sql.column_name"] = "bools"
+		metadata["sql.database_type_name"] = "tinyint"
 	}
 
-	for i, field := range schema.Fields() {
-		t.Logf("Field %d: %s (type: %s)", i, field.Name, field.Type.String())
-
-		if expected, isDecimal := expectedDecimals[field.Name]; isDecimal {
-			// Verify it's a decimal type (accept any decimal type)
-			decimalType, ok := field.Type.(arrow.DecimalType)
-			require.True(t, ok, "Field %s should be DecimalType, got %T", field.Name, field.Type)
-
-			// Verify precision and scale
-			require.Equal(t, expected.precision, decimalType.GetPrecision(), "Precision mismatch for %s", field.Name)
-			require.Equal(t, expected.scale, decimalType.GetScale(), "Scale mismatch for %s", field.Name)
-
-			t.Logf("  %s(%d,%d) ✓", field.Type.String(), decimalType.GetPrecision(), decimalType.GetScale())
-
-			// Verify metadata includes precision and scale
-			precision, ok := field.Metadata.GetValue("sql.precision")
-			require.True(t, ok, "Should have sql.precision metadata")
-			require.Equal(t, fmt.Sprintf("%d", expected.precision), precision)
-
-			scale, ok := field.Metadata.GetValue("sql.scale")
-			require.True(t, ok, "Should have sql.scale metadata")
-			require.Equal(t, fmt.Sprintf("%d", expected.scale), scale)
-		}
-	}
-
-	t.Log("✅ Decimal type handling test passed successfully")
+	return arrow.MetadataFrom(metadata)
 }
 
-// TestTimestampPrecisionHandling tests that TIMESTAMP/DATETIME types use correct Arrow timestamp units
-func TestTimestampPrecisionHandling(t *testing.T) {
-	dsn := getDSN(t)
+func (q *MySQLQuirks) Alloc() memory.Allocator      { return q.mem }
+func (q *MySQLQuirks) BindParameter(idx int) string { return "?" }
 
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
+// SupportsBulkIngest returns false because MySQL doesn't support "NULLS LAST" syntax
+// used in the ADBC validation bulk ingest tests.
+// TODO: enable this once the validation framework is fixed.
+// Filed issue: https://github.com/adbc-drivers/driverbase-go/issues/69
+func (q *MySQLQuirks) SupportsBulkIngest(string) bool              { return false }
+func (q *MySQLQuirks) SupportsConcurrentStatements() bool          { return false }
+func (q *MySQLQuirks) SupportsCurrentCatalogSchema() bool          { return true }
+func (q *MySQLQuirks) SupportsExecuteSchema() bool                 { return true }
+func (q *MySQLQuirks) SupportsGetSetOptions() bool                 { return true }
+func (q *MySQLQuirks) SupportsPartitionedData() bool               { return false }
+func (q *MySQLQuirks) SupportsStatistics() bool                    { return false }
+func (q *MySQLQuirks) SupportsTransactions() bool                  { return false }
+func (q *MySQLQuirks) SupportsGetParameterSchema() bool            { return false }
+func (q *MySQLQuirks) SupportsDynamicParameterBinding() bool       { return true }
+func (q *MySQLQuirks) SupportsErrorIngestIncompatibleSchema() bool { return true }
+func (q *MySQLQuirks) Catalog() string                             { return "db" }
+func (q *MySQLQuirks) DBSchema() string                            { return "" }
 
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with various timestamp precisions
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_timestamps (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			ts_default TIMESTAMP,
-			ts_seconds TIMESTAMP(0),
-			ts_millis TIMESTAMP(3),
-			ts_micros TIMESTAMP(6),
-			dt_default DATETIME,
-			dt_millis DATETIME(3)
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Test ExecuteSchema to get timestamp type information
-	err = stmt.SetSqlQuery("SELECT id, ts_default, ts_seconds, ts_millis, ts_micros, dt_default, dt_millis FROM adbc_test_timestamps")
-	require.NoError(t, err)
-
-	schemaStmt, ok := stmt.(adbc.StatementExecuteSchema)
-	require.True(t, ok, "Statement should implement StatementExecuteSchema")
-
-	schema, err := schemaStmt.ExecuteSchema(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, 7, len(schema.Fields()), "Should have 7 columns")
-
-	// Expected timestamp units based on precision (timezone-naive in sql-wrapper)
-	expectedTimestamps := map[string]string{
-		"ts_default": "timestamp[s]",  // MySQL reports precision=0 for default TIMESTAMP
-		"ts_seconds": "timestamp[s]",  // 0 fractional seconds = seconds
-		"ts_millis":  "timestamp[ms]", // 3 fractional seconds = milliseconds
-		"ts_micros":  "timestamp[us]", // 6 fractional seconds = microseconds
-		"dt_default": "timestamp[s]",  // MySQL reports precision=0 for default DATETIME
-		"dt_millis":  "timestamp[ms]", // 3 fractional seconds = milliseconds
+func (q *MySQLQuirks) GetMetadata(code adbc.InfoCode) interface{} {
+	switch code {
+	case adbc.InfoDriverName:
+		return "ADBC Driver Foundry Driver for MySQL"
+	case adbc.InfoDriverVersion:
+		return "(unknown or development build)"
+	case adbc.InfoDriverArrowVersion:
+		return "(unknown or development build)"
+	case adbc.InfoVendorVersion:
+		return "9.4.0 (MySQL Community Server - GPL)"
+	case adbc.InfoVendorArrowVersion:
+		return "(unknown or development build)"
+	case adbc.InfoDriverADBCVersion:
+		return adbc.AdbcVersion1_1_0
+	case adbc.InfoVendorName:
+		return "MySQL"
+	case adbc.InfoVendorSql:
+		return true
+	case adbc.InfoVendorSubstrait:
+		return false
 	}
-
-	for i, field := range schema.Fields() {
-		t.Logf("Field %d: %s (type: %s)", i, field.Name, field.Type.String())
-
-		if expectedType, isTimestamp := expectedTimestamps[field.Name]; isTimestamp {
-			// Verify the timestamp type matches expected precision
-			require.Equal(t, expectedType, field.Type.String(), "Timestamp unit mismatch for %s", field.Name)
-
-			// Verify metadata includes fractional seconds precision (if available)
-			if precision, ok := field.Metadata.GetValue("sql.fractional_seconds_precision"); ok {
-				t.Logf("  Fractional seconds precision: %s", precision)
-			}
-
-			t.Logf("  Expected: %s ✓", expectedType)
-		}
-	}
-
-	t.Log("✅ Timestamp precision handling test passed successfully")
+	return nil
 }
 
-// TestQueryBatchSizeConfiguration tests that the batch size configuration affects query streaming
-func TestQueryBatchSizeConfiguration(t *testing.T) {
-	dsn := getDSN(t)
+func withQuirks(t *testing.T, fn func(*MySQLQuirks)) {
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("Set MYSQL_DSN environment variable for validation tests")
+	}
 
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
+	q := &MySQLQuirks{dsn: dsn}
+	fn(q)
+}
 
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
+type MySQLStatementTests struct {
+	validation.StatementTests
+}
+
+func (s *MySQLStatementTests) TestSqlIngestErrors() {
+	s.T().Skip()
+}
+
+// TestValidation runs the comprehensive ADBC validation test suite
+// This is the primary test that validates ADBC specification compliance
+func TestValidation(t *testing.T) {
+	withQuirks(t, func(q *MySQLQuirks) {
+		suite.Run(t, &validation.DatabaseTests{Quirks: q})
+		suite.Run(t, &validation.ConnectionTests{Quirks: q})
+		suite.Run(t, &validation.StatementTests{Quirks: q})
 	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
+}
 
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
+// -------------------- Additional Tests --------------------
 
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
+type MySQLTests struct {
+	suite.Suite
 
-	// Create test table with many rows
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_batch_size (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			value VARCHAR(50)
+	Quirks *MySQLQuirks
+
+	ctx    context.Context
+	driver adbc.Driver
+	db     adbc.Database
+	cnxn   adbc.Connection
+	stmt   adbc.Statement
+}
+
+func (s *MySQLTests) SetupTest() {
+	var err error
+	s.ctx = context.Background()
+	s.driver = s.Quirks.SetupDriver(s.T())
+	s.db, err = s.driver.NewDatabase(s.Quirks.DatabaseOptions())
+	s.NoError(err)
+	s.cnxn, err = s.db.Open(s.ctx)
+	s.NoError(err)
+	s.stmt, err = s.cnxn.NewStatement()
+	s.NoError(err)
+}
+
+func (s *MySQLTests) TearDownTest() {
+	s.NoError(s.stmt.Close())
+	s.NoError(s.cnxn.Close())
+	s.Quirks.TearDownDriver(s.T(), s.driver)
+	s.cnxn = nil
+	s.NoError(s.db.Close())
+	s.db = nil
+	s.driver = nil
+}
+
+type selectCase struct {
+	name     string
+	query    string
+	schema   *arrow.Schema
+	expected string
+}
+
+func (s *MySQLTests) TestSelect() {
+	// Create test table with various MySQL types including spatial
+	s.NoError(s.stmt.SetSqlQuery(`
+		CREATE TEMPORARY TABLE test_types (
+			bool_col TINYINT(1),
+			tinyint_col TINYINT,
+			int_col INT,
+			bigint_col BIGINT,
+			float_col FLOAT,
+			double_col DOUBLE,
+			varchar_col VARCHAR(100),
+			json_col JSON,
+			enum_col ENUM('active', 'inactive'),
+			point_col POINT,
+			polygon_col POLYGON,
+			geometry_col GEOMETRY
 		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
+	`))
+	_, err := s.stmt.ExecuteUpdate(s.ctx)
+	s.NoError(err)
 
-	// Insert 100 rows for testing
-	err = stmt.SetSqlQuery("INSERT INTO adbc_test_batch_size (value) VALUES (?)")
-	require.NoError(t, err)
-	err = stmt.Prepare(context.Background())
-	require.NoError(t, err)
+	// Insert test data including spatial data
+	s.NoError(s.stmt.SetSqlQuery(`
+		INSERT INTO test_types VALUES (
+			1, 42, 12345, 9876543210, 3.25, 6.75, 'hello world',
+			'{"key": "value", "number": 42}', 'active',
+			ST_GeomFromText('POINT(1 2)'),
+			ST_GeomFromText('POLYGON((0 0, 0 3, 3 3, 3 0, 0 0))'),
+			ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)')
+		)
+	`))
+	_, err = s.stmt.ExecuteUpdate(s.ctx)
+	s.NoError(err)
 
-	// Create Arrow record with 100 values
-	allocator := memory.DefaultAllocator
-	stringBuilder := array.NewStringBuilder(allocator)
-	defer stringBuilder.Release()
+	for _, testCase := range []selectCase{
+		{
+			name:  "boolean",
+			query: "SELECT bool_col AS istrue FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "istrue",
+					Type:     arrow.PrimitiveTypes.Int8,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "istrue",
+						"sql.database_type_name": "TINYINT",
+					}),
+				},
+			}, nil),
+			expected: `[{"istrue": 1}]`,
+		},
+		{
+			name:  "tinyint",
+			query: "SELECT tinyint_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Int8,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "TINYINT",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 42}]`,
+		},
+		{
+			name:  "int32",
+			query: "SELECT int_col AS theanswer FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "theanswer",
+					Type:     arrow.PrimitiveTypes.Int32,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "theanswer",
+						"sql.database_type_name": "INT",
+					}),
+				},
+			}, nil),
+			expected: `[{"theanswer": 12345}]`,
+		},
+		{
+			name:  "int64",
+			query: "SELECT bigint_col AS theanswer FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "theanswer",
+					Type:     arrow.PrimitiveTypes.Int64,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "theanswer",
+						"sql.database_type_name": "BIGINT",
+					}),
+				},
+			}, nil),
+			expected: `[{"theanswer": 9876543210}]`,
+		},
+		{
+			name:  "float32",
+			query: "SELECT float_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Float32,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "FLOAT",
+						"sql.precision":          "9223372036854775807",
+						"sql.scale":              "9223372036854775807",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 3.25}]`,
+		},
+		{
+			name:  "float64",
+			query: "SELECT double_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Float64,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "DOUBLE",
+						"sql.precision":          "9223372036854775807",
+						"sql.scale":              "9223372036854775807",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 6.75}]`,
+		},
+		{
+			name:  "string",
+			query: "SELECT varchar_col AS greeting FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "greeting",
+					Type:     arrow.BinaryTypes.String,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "greeting",
+						"sql.database_type_name": "VARCHAR",
+					}),
+				},
+			}, nil),
+			expected: `[{"greeting": "hello world"}]`,
+		},
+		{
+			name:  "json",
+			query: "SELECT json_col AS data FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "data",
+					Type:     func() arrow.DataType { t, _ := extensions.NewJSONType(arrow.BinaryTypes.String); return t }(),
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "data",
+						"sql.database_type_name": "JSON",
+					}),
+				},
+			}, nil),
+			expected: `[{"data": "{\"key\": \"value\", \"number\": 42}"}]`,
+		},
+		{
+			name:  "enum",
+			query: "SELECT enum_col AS status FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "status",
+					Type:     arrow.BinaryTypes.String,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "status",
+						"sql.database_type_name": "ENUM",
+						"mysql.is_enum_set":      "true",
+					}),
+				},
+			}, nil),
+			expected: `[{"status": "active"}]`,
+		},
+		{
+			name:  "point",
+			query: "SELECT point_col AS location FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "location",
+					Type:     arrow.BinaryTypes.Binary,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "location",
+						"sql.database_type_name": "GEOMETRY",
+						"mysql.is_spatial":       "true",
+					}),
+				},
+			}, nil),
+			expected: `[{"location": "AAAAAAEBAAAAAAAAAAAA8D8AAAAAAAAAQA=="}]`,
+		},
+		{
+			name:  "polygon",
+			query: "SELECT polygon_col AS area FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "area",
+					Type:     arrow.BinaryTypes.Binary,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "area",
+						"sql.database_type_name": "GEOMETRY",
+						"mysql.is_spatial":       "true",
+					}),
+				},
+			}, nil),
+			expected: `[{"area": "AAAAAAEDAAAAAQAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIQAAAAAAAAAhAAAAAAAAACEAAAAAAAAAIQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="}]`,
+		},
+		{
+			name:  "geometry",
+			query: "SELECT geometry_col AS shape FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "shape",
+					Type:     arrow.BinaryTypes.Binary,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "shape",
+						"sql.database_type_name": "GEOMETRY",
+						"mysql.is_spatial":       "true",
+					}),
+				},
+			}, nil),
+			expected: `[{"shape": "AAAAAAECAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAQA=="}]`,
+		},
+	} {
+		s.Run(testCase.name, func() {
+			s.NoError(s.stmt.SetSqlQuery(testCase.query))
 
-	for i := 0; i < 100; i++ {
-		stringBuilder.Append(fmt.Sprintf("test_value_%d", i))
-	}
-	stringArray := stringBuilder.NewArray()
-	defer stringArray.Release()
+			rdr, rows, err := s.stmt.ExecuteQuery(s.ctx)
+			s.NoError(err)
+			defer rdr.Release()
 
-	bindSchema := arrow.NewSchema([]arrow.Field{
-		{Name: "value", Type: arrow.BinaryTypes.String, Nullable: false},
-	}, nil)
+			s.Truef(testCase.schema.Equal(rdr.Schema()), "expected: %s\ngot: %s", testCase.schema, rdr.Schema())
+			s.Equal(int64(-1), rows)
+			s.Truef(rdr.Next(), "no record, error? %s", rdr.Err())
 
-	bindRecord := array.NewRecordBatch(bindSchema, []arrow.Array{stringArray}, 100)
-	defer bindRecord.Release()
+			expectedRecord, _, err := array.RecordFromJSON(s.Quirks.Alloc(), testCase.schema, bytes.NewReader([]byte(testCase.expected)))
+			s.NoError(err)
+			defer expectedRecord.Release()
 
-	err = stmt.Bind(context.Background(), bindRecord)
-	require.NoError(t, err)
+			rec := rdr.RecordBatch()
+			s.NotNil(rec)
 
-	insertedCount, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(100), insertedCount)
+			s.Truef(array.RecordEqual(expectedRecord, rec), "expected: %s\ngot: %s", expectedRecord, rec)
 
-	// Test with different batch sizes
-	testCases := []struct {
-		batchSize    string
-		expectedName string
-	}{
-		{"5", "small batch size"},
-		{"25", "medium batch size"},
-		{"50", "large batch size"},
-		{"200", "batch size larger than total rows"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.expectedName, func(t *testing.T) {
-			// Create new statement for each test
-			testStmt, err := cn.NewStatement()
-			require.NoError(t, err)
-			defer testutil.CheckedClose(t, testStmt)
-
-			// Set the batch size
-			err = testStmt.SetOption("adbc.statement.batch_size", tc.batchSize)
-			require.NoError(t, err)
-
-			// Query all rows
-			err = testStmt.SetSqlQuery("SELECT id, value FROM adbc_test_batch_size ORDER BY id")
-			require.NoError(t, err)
-
-			reader, rowCount, err := testStmt.ExecuteQuery(context.Background())
-			require.NoError(t, err)
-			require.Equal(t, int64(-1), rowCount) // Row count unknown until read
-			defer reader.Release()
-
-			totalRows := int64(0)
-			batchCount := 0
-
-			// Read all batches and count them
-			for reader.Next() {
-				record := reader.RecordBatch()
-				require.NotNil(t, record)
-
-				batchRows := record.NumRows()
-				totalRows += batchRows
-				batchCount++
-
-				t.Logf("Batch %d: %d rows (batch size setting: %s)", batchCount, batchRows, tc.batchSize)
-
-				// Verify batch doesn't exceed expected size (except for last batch)
-				expectedBatchSize, _ := strconv.Atoi(tc.batchSize)
-				require.LessOrEqual(t, int(batchRows), expectedBatchSize, "Batch size should not exceed configured limit")
-			}
-
-			require.NoError(t, reader.Err())
-			require.Equal(t, int64(100), totalRows, "Should read all 100 rows")
-
-			// Verify that smaller batch sizes result in more batches
-			expectedBatchSize, _ := strconv.Atoi(tc.batchSize)
-			if expectedBatchSize < 100 {
-				require.Greater(t, batchCount, 1, "Small batch sizes should result in multiple batches")
-				expectedBatches := (100 + expectedBatchSize - 1) / expectedBatchSize // Ceiling division
-				require.Equal(t, expectedBatches, batchCount, "Number of batches should match expected based on batch size")
-			} else {
-				require.Equal(t, 1, batchCount, "Large batch sizes should result in single batch")
-			}
-
-			t.Logf("✅ Batch size %s: %d batches, %d total rows", tc.batchSize, batchCount, totalRows)
+			s.False(rdr.Next())
+			s.NoError(rdr.Err())
 		})
 	}
-
-	t.Log("✅ Query batch size configuration test passed successfully")
 }
 
-// TestTypedBuilderHandling tests that the sqlRecordReader properly handles different data types with typed builders
-func TestTypedBuilderHandling(t *testing.T) {
-	dsn := getDSN(t)
-
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with various data types
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_typed_builders (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			tiny_int TINYINT,
-			small_int SMALLINT,
-			medium_int MEDIUMINT,
-			big_int BIGINT,
-			float_val FLOAT,
-			double_val DOUBLE,
-			varchar_val VARCHAR(100),
-			text_val TEXT,
-			bool_val BOOLEAN,
-			decimal_val DECIMAL(10,2),
-			timestamp_val TIMESTAMP,
-			binary_val VARBINARY(50),
-			json_val JSON,
-			enum_val ENUM('red', 'green', 'blue')
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Insert test data with various types
-	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_typed_builders (
-			tiny_int, small_int, medium_int, big_int,
-			float_val, double_val, varchar_val, text_val, bool_val,
-			decimal_val, timestamp_val, binary_val, json_val, enum_val
-		) VALUES
-		(127, 32767, 8388607, 9223372036854775807,
-		 3.14159, 2.718281828, 'test string', 'longer text content', true,
-		 123.45, '2023-12-25 10:30:00', X'48656C6C6F', '{"key": "value"}', 'red'),
-		(-128, -32768, -8388608, -9223372036854775808,
-		 -1.5, -999.999, 'another string', 'more text', false,
-		 -67.89, '2024-01-01 00:00:00', X'576F726C64', '{"number": 42}', 'green'),
-		(NULL, NULL, NULL, NULL,
-		 NULL, NULL, NULL, NULL, NULL,
-		 NULL, NULL, NULL, NULL, NULL)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Query the data to test typed builders
-	err = stmt.SetSqlQuery(`
-		SELECT id, tiny_int, small_int, medium_int, big_int,
-		       float_val, double_val, varchar_val, text_val, bool_val,
-		       decimal_val, timestamp_val, binary_val, json_val, enum_val
-		FROM adbc_test_typed_builders
-		ORDER BY id
-	`)
-	require.NoError(t, err)
-
-	// Set a small batch size to ensure we test the builder logic properly
-	err = stmt.SetOption("adbc.statement.batch_size", "2")
-	require.NoError(t, err)
-
-	reader, rowCount, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(-1), rowCount)
-	defer reader.Release()
-
-	schema := reader.Schema()
-	require.Equal(t, 15, len(schema.Fields()), "Should have 15 columns")
-
-	// Verify schema field types
-	expectedTypes := map[string]string{
-		"id":            "int32",
-		"tiny_int":      "int8",
-		"small_int":     "int16",
-		"medium_int":    "int32",
-		"big_int":       "int64",
-		"float_val":     "float32",
-		"double_val":    "float64",
-		"varchar_val":   "utf8",
-		"text_val":      "utf8",
-		"bool_val":      "int8", // MySQL BOOLEAN is actually TINYINT
-		"decimal_val":   "decimal64(10, 2)",
-		"timestamp_val": "timestamp[s]", // Default precision is 0 = seconds
-		"binary_val":    "binary",
-		"json_val":      "extension<arrow.json[storage_type=utf8]>",
-		"enum_val":      "utf8", // ENUM handled by MySQL type converter
-	}
-
-	for _, field := range schema.Fields() {
-		expectedType, exists := expectedTypes[field.Name]
-		require.True(t, exists, "Unexpected field: %s", field.Name)
-		require.Equal(t, expectedType, field.Type.String(), "Type mismatch for field %s", field.Name)
-		t.Logf("Field %s: %s ✓", field.Name, field.Type.String())
-	}
-
-	totalRows := int64(0)
-	batchCount := 0
-
-	// Read all batches and verify data
-	for reader.Next() {
-		record := reader.RecordBatch()
-		require.NotNil(t, record)
-
-		batchRows := record.NumRows()
-		totalRows += batchRows
-		batchCount++
-
-		t.Logf("Batch %d: %d rows", batchCount, batchRows)
-
-		// Verify data types and values for each column
-		for colIdx := range int(record.NumCols()) {
-			field := schema.Field(colIdx)
-			column := record.Column(colIdx)
-
-			t.Logf("  Column %s (%s): %d values", field.Name, field.Type.String(), column.Len())
-
-			// Test a few specific values to ensure typed builders worked correctly
-			if batchCount == 1 && batchRows >= 2 { // First batch with at least 2 rows
-				switch field.Name {
-				case "id":
-					idCol := column.(*array.Int32)
-					require.Equal(t, int32(1), idCol.Value(0), "First ID should be 1")
-					require.Equal(t, int32(2), idCol.Value(1), "Second ID should be 2")
-
-				case "tiny_int":
-					tinyCol := column.(*array.Int8)
-					require.Equal(t, int8(127), tinyCol.Value(0), "First tiny_int should be 127")
-					require.Equal(t, int8(-128), tinyCol.Value(1), "Second tiny_int should be -128")
-
-				case "varchar_val":
-					strCol := column.(*array.String)
-					require.Equal(t, "test string", strCol.Value(0), "First varchar should match")
-					require.Equal(t, "another string", strCol.Value(1), "Second varchar should match")
-
-				case "bool_val":
-					// MySQL BOOLEAN is actually TINYINT (int8)
-					boolCol := column.(*array.Int8)
-					require.Equal(t, int8(1), boolCol.Value(0), "First bool should be 1 (true)")
-					require.Equal(t, int8(0), boolCol.Value(1), "Second bool should be 0 (false)")
-
-				case "decimal_val":
-					// Decimal fields should be properly typed (accept any decimal type)
-					switch column.DataType().(type) {
-					case *arrow.Decimal32Type, *arrow.Decimal64Type, *arrow.Decimal128Type, *arrow.Decimal256Type:
-						// Valid decimal type
-					default:
-						t.Errorf("Decimal column should be a decimal type, got %T", column.DataType())
-					}
-				}
-			}
-
-			// Test NULL handling for third row (if present)
-			if batchCount == 2 && batchRows >= 1 { // Second batch with NULL row
-				nullRowIdx := 0 // First row in second batch is the NULL row
-				if nullRowIdx < int(batchRows) {
-					switch field.Name {
-					case "id":
-						// ID is auto-increment, should not be NULL
-						idCol := column.(*array.Int32)
-						require.False(t, idCol.IsNull(nullRowIdx), "ID should not be NULL")
-					case "tiny_int", "varchar_val", "bool_val":
-						// These should be NULL in the third row
-						require.True(t, column.IsNull(nullRowIdx), "Column %s should be NULL in row %d", field.Name, nullRowIdx)
-					}
-				}
-			}
-		}
-	}
-
-	require.NoError(t, reader.Err())
-	require.Equal(t, int64(3), totalRows, "Should read all 3 rows")
-	require.Equal(t, 2, batchCount, "Should have 2 batches with batch size 2")
-
-	t.Log("✅ Typed builder handling test passed successfully")
+type MySQLTestSuite struct {
+	suite.Suite
+	dsn    string
+	mem    *memory.CheckedAllocator
+	ctx    context.Context
+	driver adbc.Driver
+	db     adbc.Database
+	cnxn   adbc.Connection
+	stmt   adbc.Statement
 }
 
-func TestSQLNullableTypesHandling(t *testing.T) {
-	dsn := getDSN(t)
-
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with nullable columns
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_nullable (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			nullable_int INT,
-			nullable_bigint BIGINT,
-			nullable_float DOUBLE,
-			nullable_text TEXT,
-			nullable_bool BOOLEAN,
-			nullable_datetime DATETIME,
-			nullable_time TIME
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Insert test data with NULL values
-	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_nullable
-		(nullable_int, nullable_bigint, nullable_float, nullable_text, nullable_bool, nullable_datetime, nullable_time)
-		VALUES
-		(123, 456789, 12.34, 'test string', true, '2023-01-01 12:30:45', '14:30:00'),
-		(NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-		(789, 987654, 56.78, 'another test', false, '2023-12-31 23:59:59', '23:59:59')
-	`)
-	require.NoError(t, err)
-	affected, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(3), affected, "Should insert 3 rows")
-
-	// Query the data to test nullable type handling
-	err = stmt.SetSqlQuery("SELECT * FROM adbc_test_nullable ORDER BY id")
-	require.NoError(t, err)
-
-	reader, rowCount, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(-1), rowCount) // -1 because we don't know row count upfront
-	defer reader.Release()
-
-	totalRows := int64(0)
-	batchCount := 0
-
-	for reader.Next() {
-		batchCount++
-		record := reader.RecordBatch()
-		require.NotNil(t, record, "Record should not be nil")
-
-		rowsInBatch := record.NumRows()
-		totalRows += rowsInBatch
-
-		t.Logf("Batch %d: %d rows, %d columns", batchCount, rowsInBatch, record.NumCols())
-
-		// Verify the schema
-		schema := record.Schema()
-		require.Equal(t, 8, len(schema.Fields()), "Should have 8 columns")
-
-		// Check some specific values
-		for rowIdx := int64(0); rowIdx < rowsInBatch; rowIdx++ {
-			// Get ID column (should never be null)
-			idCol := record.Column(0)
-			require.False(t, idCol.IsNull(int(rowIdx)), "ID should not be null")
-
-			// Check that second row (index 1) has nulls for nullable columns
-			if totalRows > 1 && rowIdx == 1 {
-				for colIdx := 1; colIdx < int(record.NumCols()); colIdx++ {
-					col := record.Column(colIdx)
-					require.True(t, col.IsNull(int(rowIdx)),
-						"Column %d of row %d should be null", colIdx, rowIdx)
-				}
-				t.Log("✅ NULL values correctly handled")
-			}
-		}
+func (s *MySQLTestSuite) SetupSuite() {
+	var err error
+	s.dsn = os.Getenv("MYSQL_DSN")
+	if s.dsn == "" {
+		s.T().Skip("Set MYSQL_DSN environment variable")
 	}
 
-	require.NoError(t, reader.Err())
-	require.Equal(t, int64(3), totalRows, "Should read all 3 rows")
+	s.ctx = context.Background()
+	s.mem = memory.NewCheckedAllocator(memory.DefaultAllocator)
 
-	t.Log("✅ SQL nullable types handling test passed successfully")
+	s.driver = mysql.NewDriver(s.mem)
+	s.db, err = s.driver.NewDatabase(map[string]string{
+		adbc.OptionKeyURI: s.dsn,
+	})
+	s.NoError(err)
+
+	s.cnxn, err = s.db.Open(s.ctx)
+	s.NoError(err)
+
+	s.stmt, err = s.cnxn.NewStatement()
+	s.NoError(err)
 }
 
-func TestExtendedArrowArrayTypes(t *testing.T) {
-	dsn := getDSN(t)
-
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with different string and binary types
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_extended_types (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			varchar_col VARCHAR(255),
-			text_col TEXT,
-			longtext_col LONGTEXT,
-			binary_col BINARY(16),
-			varbinary_col VARBINARY(255),
-			blob_col BLOB
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Insert test data
-	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_extended_types
-		(varchar_col, text_col, longtext_col, binary_col, varbinary_col, blob_col)
-		VALUES
-		('short string', 'medium text content', 'very long text content that could be handled by different Arrow string types',
-		 0x0123456789ABCDEF0123456789ABCDEF, 0x48656C6C6F, 0x576F726C64)
-	`)
-	require.NoError(t, err)
-	affected, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(1), affected, "Should insert 1 row")
-
-	// Query the data to test extended array type handling
-	err = stmt.SetSqlQuery("SELECT * FROM adbc_test_extended_types")
-	require.NoError(t, err)
-
-	reader, rowCount, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(-1), rowCount)
-	defer reader.Release()
-
-	recordCount := 0
-	for reader.Next() {
-		recordCount++
-		record := reader.RecordBatch()
-		require.NotNil(t, record, "Record should not be nil")
-		require.Equal(t, int64(1), record.NumRows(), "Should have 1 row")
-		require.Equal(t, int64(7), record.NumCols(), "Should have 7 columns")
-
-		// Verify we can read all column types without errors
-		for colIdx := 0; colIdx < int(record.NumCols()); colIdx++ {
-			col := record.Column(colIdx)
-			require.False(t, col.IsNull(0), "Column %d should not be null", colIdx)
-
-			// Try to get the value from the array - this exercises our extractArrowValue logic
-			switch a := col.(type) {
-			case *array.String:
-				val := a.Value(0)
-				require.NotEmpty(t, val, "String value should not be empty")
-			case *array.Binary:
-				val := a.Value(0)
-				require.NotEmpty(t, val, "Binary value should not be empty")
-			case *array.Int32:
-				val := a.Value(0)
-				require.Greater(t, val, int32(0), "ID should be positive")
-			}
-		}
+func (s *MySQLTestSuite) TearDownSuite() {
+	if s.stmt != nil {
+		s.NoError(s.stmt.Close())
 	}
-
-	require.NoError(t, reader.Err())
-	require.Equal(t, 1, recordCount, "Should read exactly 1 record")
-
-	t.Log("✅ Extended Arrow array types test passed successfully")
+	if s.cnxn != nil {
+		s.NoError(s.cnxn.Close())
+	}
+	if s.db != nil {
+		s.NoError(s.db.Close())
+	}
+	s.mem.AssertSize(s.T(), 0)
 }
 
-func TestTemporalAndDecimalExtraction(t *testing.T) {
-	dsn := getDSN(t)
-
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with temporal and decimal types
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_temporal_decimal (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			date_col DATE,
-			datetime_col DATETIME(6),
-			timestamp_col TIMESTAMP(3),
-			time_col TIME(6),
-			decimal_precise DECIMAL(10, 2),
-			decimal_money DECIMAL(19, 4),
-			decimal_percentage DECIMAL(5, 3)
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Insert test data with various temporal and decimal values
-	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_temporal_decimal
-		(date_col, datetime_col, timestamp_col, time_col, decimal_precise, decimal_money, decimal_percentage)
-		VALUES
-		('2023-06-15', '2023-06-15 14:30:45.123456', '2023-06-15 14:30:45.123', '14:30:45.123456',
-		 123.45, 1234567.8900, 99.999),
-		('2024-01-01', '2024-01-01 00:00:00.000000', '2024-01-01 00:00:00.000', '00:00:00.000000',
-		 0.01, 0.0001, 0.001)
-	`)
-	require.NoError(t, err)
-	affected, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(2), affected, "Should insert 2 rows")
-
-	// Test using the data for parameter binding (this exercises extractArrowValue)
-	err = stmt.SetSqlQuery("SELECT * FROM adbc_test_temporal_decimal ORDER BY id")
-	require.NoError(t, err)
-
-	reader, rowCount, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(-1), rowCount)
-	defer reader.Release()
-
-	totalRows := 0
-	for reader.Next() {
-		record := reader.RecordBatch()
-		require.NotNil(t, record, "Record should not be nil")
-
-		rowsInBatch := int(record.NumRows())
-		totalRows += rowsInBatch
-
-		t.Logf("Processing batch with %d rows", rowsInBatch)
-
-		// Verify schema contains proper Arrow types for /decimal data
-		schema := record.Schema()
-		require.Equal(t, 8, len(schema.Fields()), "Should have 8 columns")
-
-		// Check that we can read the data successfully
-		for rowIdx := 0; rowIdx < rowsInBatch; rowIdx++ {
-			for colIdx := 0; colIdx < int(record.NumCols()); colIdx++ {
-				col := record.Column(colIdx)
-				if !col.IsNull(rowIdx) {
-					// Test that we can get values from different types
-					switch colIdx {
-					case 0: // id - should be int
-						require.Equal(t, arrow.PrimitiveTypes.Int32, col.DataType())
-					case 1: // date_col - should be date
-						require.Equal(t, arrow.FixedWidthTypes.Date32, col.DataType())
-					case 2, 3: // datetime_col, timestamp_col - should be timestamp
-						timestampType, ok := col.DataType().(*arrow.TimestampType)
-						require.True(t, ok, "Should be timestamp type")
-						require.Contains(t, []arrow.TimeUnit{arrow.Second, arrow.Millisecond, arrow.Microsecond}, timestampType.Unit)
-					case 4: // time_col - should be time
-						timeType := col.DataType()
-						// Check if it's a time type (Time32 or Time64)
-						isTimeType := false
-						switch timeType.(type) {
-						case *arrow.Time32Type, *arrow.Time64Type:
-							isTimeType = true
-						}
-						require.True(t, isTimeType, "Should be time type, got %T", timeType)
-					case 5, 6, 7: // decimal columns - should be decimal
-						decimalType, ok := col.DataType().(arrow.DecimalType)
-						require.True(t, ok, "Should be decimal type, got %T", col.DataType())
-						require.Greater(t, decimalType.GetPrecision(), int32(0), "Precision should be positive")
-						require.GreaterOrEqual(t, decimalType.GetScale(), int32(0), "Scale should be non-negative")
-					}
-				}
-			}
-		}
+func TestMySQLTypeTests(t *testing.T) {
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("Set MYSQL_DSN environment variable for type tests")
 	}
 
-	require.NoError(t, reader.Err())
-	require.Equal(t, 2, totalRows, "Should read exactly 2 rows")
-
-	t.Log("✅ Temporal and decimal extraction test passed successfully")
+	quirks := &MySQLQuirks{dsn: dsn}
+	suite.Run(t, &MySQLTests{Quirks: quirks})
 }
 
-// TestMySQLCustomTypeConverter tests the custom MySQL TypeConverter value conversion methods
-func TestMySQLCustomTypeConverter(t *testing.T) {
-	dsn := getDSN(t)
-
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with MySQL-specific types that will use custom conversion
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_custom_converter (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			json_col JSON,
-			enum_col ENUM('value1', 'value2', 'value3'),
-			timestamp_col TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			datetime_col DATETIME,
-			text_col TEXT
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Insert test data with various MySQL-specific values
-	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_custom_converter
-		(json_col, enum_col, timestamp_col, datetime_col, text_col)
-		VALUES
-		('{"key": "value", "number": 42}', 'value1', '2023-06-15 14:30:45', '2023-06-15 14:30:45', 'regular text'),
-		('{"array": [1, 2, 3], "nested": {"inner": true}}', 'value2', '2024-01-01 00:00:00', '2024-01-01 00:00:00', 'more text')
-	`)
-	require.NoError(t, err)
-	affected, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(2), affected, "Should insert 2 rows")
-
-	// Query the data to test the custom TypeConverter
-	err = stmt.SetSqlQuery("SELECT id, json_col, enum_col, timestamp_col, datetime_col, text_col FROM adbc_test_custom_converter ORDER BY id")
-	require.NoError(t, err)
-
-	reader, rowCount, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(-1), rowCount)
-	defer reader.Release()
-
-	schema := reader.Schema()
-	require.Equal(t, 6, len(schema.Fields()), "Should have 6 columns")
-
-	// Verify schema includes MySQL-specific metadata
-	for i, field := range schema.Fields() {
-		t.Logf("Field %d: %s (type: %s)", i, field.Name, field.Type.String())
-
-		switch field.Name {
-		case "json_col":
-			require.Equal(t, "extension<arrow.json[storage_type=utf8]>", field.Type.String(), "JSON should be utf8 type")
-		case "enum_col":
-			require.Equal(t, "utf8", field.Type.String(), "ENUM should be utf8 type")
-		case "timestamp_col":
-			require.Equal(t, "timestamp[s]", field.Type.String(), "TIMESTAMP should be timestamp[s]")
-
-			// Verify this is marked as TIMESTAMP (not DATETIME)
-			dbType, ok := field.Metadata.GetValue("sql.database_type_name")
-			require.True(t, ok, "Should have database_type_name metadata")
-			require.Equal(t, "TIMESTAMP", dbType, "Should be TIMESTAMP type")
-			t.Logf("  ✓ TIMESTAMP type detected: %s", dbType)
-
-		case "datetime_col":
-			require.Equal(t, "timestamp[s]", field.Type.String(), "DATETIME should be timestamp[s]")
-
-			// Verify this is marked as DATETIME (not TIMESTAMP)
-			dbType, ok := field.Metadata.GetValue("sql.database_type_name")
-			require.True(t, ok, "Should have database_type_name metadata")
-			require.Equal(t, "DATETIME", dbType, "Should be DATETIME type")
-			t.Logf("  ✓ DATETIME type detected: %s", dbType)
-		}
-	}
-
-	totalRows := 0
-	for reader.Next() {
-		record := reader.RecordBatch()
-		require.NotNil(t, record, "Record should not be nil")
-
-		rowsInBatch := int(record.NumRows())
-		totalRows += rowsInBatch
-
-		t.Logf("Processing batch with %d rows", rowsInBatch)
-
-		// Test data retrieval and verify custom TypeConverter behavior
-		for rowIdx := range rowsInBatch {
-			t.Logf("Row %d:", rowIdx)
-
-			// Test JSON column (custom handling in ConvertSQLToArrow)
-			jsonCol := record.Column(1).(*extensions.JSONArray)
-			if !jsonCol.IsNull(rowIdx) {
-				jsonValue := jsonCol.Value(rowIdx)
-				t.Logf("  JSON: %#v", jsonValue)
-
-				// Check for content specific to each row
-				switch rowIdx {
-				case 0:
-					require.Equal(t, map[string]any{"key": "value", "number": float64(42)}, jsonValue, "First JSON should match inserted value: %s", jsonValue)
-				case 1:
-					require.Contains(t, jsonValue, "array", "Second JSON should contain 'array'")
-				}
-			}
-
-			// Test ENUM column (custom handling in ConvertSQLToArrow)
-			enumCol := record.Column(2).(*array.String)
-			if !enumCol.IsNull(rowIdx) {
-				enumValue := enumCol.Value(rowIdx)
-				t.Logf("  ENUM: %s", enumValue)
-
-				// Verify it's one of the allowed ENUM values
-				require.Contains(t, []string{"value1", "value2", "value3"}, enumValue, "ENUM value should be valid")
-			}
-
-			// Test TIMESTAMP column (should be handled by custom converter)
-			timestampCol := record.Column(3).(*array.Timestamp)
-			if !timestampCol.IsNull(rowIdx) {
-				timestampValue := timestampCol.Value(rowIdx)
-				t.Logf("  TIMESTAMP: %v", timestampValue)
-
-				// Verify timestamp is reasonable (between 2020 and 2030)
-				require.True(t, timestampValue > 0, "Timestamp should be positive")
-			}
-
-			// Test DATETIME column (should use default converter behavior)
-			datetimeCol := record.Column(4).(*array.Timestamp)
-			if !datetimeCol.IsNull(rowIdx) {
-				datetimeValue := datetimeCol.Value(rowIdx)
-				t.Logf("  DATETIME: %v", datetimeValue)
-
-				// Verify datetime is reasonable (between 2020 and 2030)
-				require.True(t, datetimeValue > 0, "Datetime should be positive")
-			}
-		}
-	}
-
-	require.NoError(t, reader.Err())
-	require.Equal(t, 2, totalRows, "Should read exactly 2 rows")
-
-	t.Log("✅ MySQL custom TypeConverter test passed successfully")
-}
-
-// TestMySQLTypeConverterEdgeCases tests edge cases and error conditions in the custom MySQL TypeConverter
-func TestMySQLTypeConverterEdgeCases(t *testing.T) {
-	dsn := getDSN(t)
-
-	mysqlDriver := mysql.NewDriver(memory.DefaultAllocator)
-
-	db, err := mysqlDriver.NewDatabase(map[string]string{
-		adbc.OptionKeyURI: dsn,
-	})
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, db)
-
-	cn, err := db.Open(context.Background())
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, cn)
-
-	stmt, err := cn.NewStatement()
-	require.NoError(t, err)
-	defer testutil.CheckedClose(t, stmt)
-
-	// Create test table with edge cases
-	err = stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE adbc_test_converter_edge_cases (
-			id INT PRIMARY KEY AUTO_INCREMENT,
-			json_null JSON,
-			json_empty JSON,
-			json_invalid TEXT,
-			enum_null ENUM('a', 'b') DEFAULT NULL,
-			timestamp_null TIMESTAMP NULL,
-			large_json JSON
-		)
-	`)
-	require.NoError(t, err)
-	_, err = stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-
-	// Insert edge case data
-	err = stmt.SetSqlQuery(`
-		INSERT INTO adbc_test_converter_edge_cases
-		(json_null, json_empty, json_invalid, enum_null, timestamp_null, large_json)
-		VALUES
-		(NULL, '{}', 'not json', NULL, NULL, '{"large": "data", "array": [1,2,3,4,5], "nested": {"deep": {"deeper": "value"}}}'),
-		('null', '[]', 'also not json', 'a', '2023-01-01 12:00:00', '{"simple": true}')
-	`)
-	require.NoError(t, err)
-	affected, err := stmt.ExecuteUpdate(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, int64(2), affected, "Should insert 2 rows")
-
-	// Query and verify edge case handling
-	err = stmt.SetSqlQuery("SELECT * FROM adbc_test_converter_edge_cases ORDER BY id")
-	require.NoError(t, err)
-
-	reader, _, err := stmt.ExecuteQuery(context.Background())
-	require.NoError(t, err)
-	defer reader.Release()
-
-	totalRows := 0
-	for reader.Next() {
-		record := reader.RecordBatch()
-		require.NotNil(t, record, "Record should not be nil")
-
-		rowsInBatch := int(record.NumRows())
-		totalRows += rowsInBatch
-
-		// Test NULL handling
-		for rowIdx := range rowsInBatch {
-			t.Logf("Testing edge case row %d:", rowIdx)
-
-			// Test NULL JSON
-			jsonNullCol := record.Column(1)
-			if rowIdx == 0 {
-				require.True(t, jsonNullCol.IsNull(rowIdx), "First row json_null should be NULL")
-				t.Log("  ✓ NULL JSON handled correctly")
-			}
-
-			// Test empty JSON objects/arrays
-			jsonEmptyCol := record.Column(2)
-			if !jsonEmptyCol.IsNull(rowIdx) {
-				jsonEmpty := jsonEmptyCol.(*extensions.JSONArray).ValueStr(rowIdx)
-				t.Logf("  Empty JSON: %s", jsonEmpty)
-				require.True(t, jsonEmpty == "{}" || jsonEmpty == "[]" || jsonEmpty == "null", "Should handle empty JSON")
-			}
-
-			// Test invalid JSON in TEXT field (should be handled as regular string)
-			jsonInvalidCol := record.Column(3).(*array.String)
-			if !jsonInvalidCol.IsNull(rowIdx) {
-				invalidValue := jsonInvalidCol.Value(rowIdx)
-				t.Logf("  Invalid JSON as text: %s", invalidValue)
-				require.Contains(t, []string{"not json", "also not json"}, invalidValue, "Should handle non-JSON text")
-			}
-
-			// Test NULL ENUM
-			enumNullCol := record.Column(4)
-			if rowIdx == 0 {
-				require.True(t, enumNullCol.IsNull(rowIdx), "First row enum_null should be NULL")
-				t.Log("  ✓ NULL ENUM handled correctly")
-			}
-
-			// Test large JSON (verify custom converter can handle large data)
-			largeJsonCol := record.Column(6).(*extensions.JSONArray)
-			if !largeJsonCol.IsNull(rowIdx) {
-				largeJson := largeJsonCol.ValueStr(rowIdx)
-				t.Logf("  Large JSON length: %d chars", len(largeJson))
-				require.Greater(t, len(largeJson), 10, "Large JSON should be substantial")
-				require.True(t, largeJson[0] == '{', "Large JSON should be valid JSON object")
-			}
-		}
-	}
-
-	require.NoError(t, reader.Err())
-	require.Equal(t, 2, totalRows, "Should read exactly 2 rows")
-
-	t.Log("✅ MySQL custom TypeConverter edge cases test passed successfully")
+func TestMySQLIntegrationSuite(t *testing.T) {
+	suite.Run(t, new(MySQLTestSuite))
 }
