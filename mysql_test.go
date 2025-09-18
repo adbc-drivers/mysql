@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/adbc-drivers/driverbase-go/validation"
 	"github.com/apache/arrow-adbc/go/adbc"
-	"github.com/apache/arrow-adbc/go/adbc/validation"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/extensions"
@@ -230,6 +230,8 @@ func (q *MySQLQuirks) BindParameter(idx int) string { return "?" }
 
 // SupportsBulkIngest returns false because MySQL doesn't support "NULLS LAST" syntax
 // used in the ADBC validation bulk ingest tests.
+// TODO: enable this once the validation framework is fixed.
+// Filed issue: https://github.com/adbc-drivers/driverbase-go/issues/69
 func (q *MySQLQuirks) SupportsBulkIngest(string) bool              { return false }
 func (q *MySQLQuirks) SupportsConcurrentStatements() bool          { return false }
 func (q *MySQLQuirks) SupportsCurrentCatalogSchema() bool          { return true }
