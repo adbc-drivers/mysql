@@ -17,9 +17,9 @@ module github.com/adbc-drivers/mysql
 go 1.25.0
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250917060751-d1045c6ceeab
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250917060751-d1045c6ceeab
-	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20250917060751-d1045c6ceeab
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20250922080603-78b657819d22
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20250922080603-78b657819d22
+	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20250922080603-78b657819d22
 	github.com/apache/arrow-adbc/go/adbc v1.8.0
 	github.com/apache/arrow-go/v18 v18.4.1
 	github.com/go-ext/variant v1.2.4
@@ -29,7 +29,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250905072113-b71f3df51f8d // indirect
+	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20250922080603-78b657819d22 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apache/thrift v0.22.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -70,8 +70,8 @@ require (
 	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/tools v0.37.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250908214217-97024824d090 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250908214217-97024824d090 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250922171735-9219d122eba9 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250922171735-9219d122eba9 // indirect
 	google.golang.org/grpc v1.75.1 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
