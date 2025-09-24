@@ -119,52 +119,100 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 	}
 }
 
-// ConvertSQLToArrow implements MySQL-specific SQL value to Arrow value conversion
-func (m *mySQLTypeConverter) ConvertSQLToArrow(sqlValue any, field *arrow.Field) (any, error) {
-	// Handle MySQL-specific type conversions
+// CreateInserter creates MySQL-specific inserters bound to builders for enhanced performance
+func (m *mySQLTypeConverter) CreateInserter(field *arrow.Field, builder array.Builder) (sqlwrapper.Inserter, error) {
+	// Check for MySQL-specific types first
 	switch field.Type.(type) {
 	case *extensions.JSONType:
-		// Handle JSON extension type conversion
-		switch v := sqlValue.(type) {
-		case []byte:
-			return string(v), nil
-		case string:
-			return v, nil
-		default:
-			return fmt.Sprintf("%v", sqlValue), nil
-		}
+		return &mysqlJSONInserter{builder: builder}, nil
 	case *arrow.BinaryType:
 		if dbTypeName, ok := field.Metadata.GetValue("sql.database_type_name"); ok && dbTypeName == "BIT" {
-			// For BIT types, convert various formats to binary data
-			switch v := sqlValue.(type) {
-			case []byte:
-				return v, nil
-			case string:
-				return []byte(v), nil
-			default:
-				return []byte(fmt.Sprintf("%v", sqlValue)), nil
-			}
+			return &mysqlBitInserter{builder: builder.(array.BinaryLikeBuilder)}, nil
 		}
-
 		// Handle MySQL spatial types
 		if isSpatial, ok := field.Metadata.GetValue("mysql.is_spatial"); ok && isSpatial == "true" {
-			// For spatial types, ensure we preserve binary data correctly
-			switch v := sqlValue.(type) {
-			case []byte:
-				return v, nil
-			case string:
-				return []byte(v), nil
-			default:
-				return []byte(fmt.Sprintf("%v", sqlValue)), nil
-			}
+			return &mysqlSpatialInserter{builder: builder.(array.BinaryLikeBuilder)}, nil
 		}
 		// Fall through to default for non-spatial binary
-		return m.DefaultTypeConverter.ConvertSQLToArrow(sqlValue, field)
-
+		return m.DefaultTypeConverter.CreateInserter(field, builder)
 	default:
-		// For all other types, use default conversion
-		return m.DefaultTypeConverter.ConvertSQLToArrow(sqlValue, field)
+		// For all other types, use default inserter
+		return m.DefaultTypeConverter.CreateInserter(field, builder)
 	}
+}
+
+// MySQL-specific inserters
+type mysqlJSONInserter struct {
+	builder array.Builder
+}
+
+func (ins *mysqlJSONInserter) AppendValue(sqlValue any) error {
+	if sqlValue == nil {
+		ins.builder.AppendNull()
+		return nil
+	}
+
+	var val string
+	switch v := sqlValue.(type) {
+	case []byte:
+		val = string(v)
+	case string:
+		val = v
+	default:
+		val = fmt.Sprintf("%v", sqlValue)
+	}
+
+	// For extension types, we need to use AppendValueFromString
+	// since the ExtensionBuilder doesn't implement StringLikeBuilder.Append
+	return ins.builder.AppendValueFromString(val)
+}
+
+type mysqlBitInserter struct {
+	builder array.BinaryLikeBuilder
+}
+
+func (ins *mysqlBitInserter) AppendValue(sqlValue any) error {
+	if sqlValue == nil {
+		ins.builder.AppendNull()
+		return nil
+	}
+
+	var val []byte
+	switch v := sqlValue.(type) {
+	case []byte:
+		val = v
+	case string:
+		val = []byte(v)
+	default:
+		val = []byte(fmt.Sprintf("%v", sqlValue))
+	}
+
+	ins.builder.Append(val)
+	return nil
+}
+
+type mysqlSpatialInserter struct {
+	builder array.BinaryLikeBuilder
+}
+
+func (ins *mysqlSpatialInserter) AppendValue(sqlValue any) error {
+	if sqlValue == nil {
+		ins.builder.AppendNull()
+		return nil
+	}
+
+	var val []byte
+	switch v := sqlValue.(type) {
+	case []byte:
+		val = v
+	case string:
+		val = []byte(v)
+	default:
+		val = []byte(fmt.Sprintf("%v", sqlValue))
+	}
+
+	ins.builder.Append(val)
+	return nil
 }
 
 // ConvertArrowToGo implements MySQL-specific Arrow value to Go value conversion
