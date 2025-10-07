@@ -49,6 +49,16 @@ func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 }
 
 // buildMySQLDSN constructs a MySQL DSN from the provided options.
+// Handles the following scenarios:
+//  1. Full DSN, no separate credentials:
+//     Example: "user:pass@tcp(host:port)/db"
+//     → Returned as-is.
+//  2. Plain host + credentials:
+//     Example: baseURI="localhost:3306", username="root", password="secret"
+//     → Produces "root:secret@tcp(localhost:3306)/".
+//  3. Full DSN + override credentials:
+//     Example: baseURI="old:old@tcp(host:3306)/db", username="new", password="newpass"
+//     → Credentials are replaced.
 func (f *MySQLDBFactory) buildMySQLDSN(opts map[string]string) (string, error) {
 	baseURI := opts[adbc.OptionKeyURI]
 	username := opts[adbc.OptionKeyUsername]
@@ -73,8 +83,8 @@ func (f *MySQLDBFactory) buildFromNativeDSN(baseURI, username, password string) 
 	var cfg *mysql.Config
 	var err error
 
-	// Try to parse as existing MySQL DSN
 	if strings.Contains(baseURI, "@") || strings.Contains(baseURI, "/") {
+		// Try to parse as existing MySQL DSN
 		cfg, err = mysql.ParseDSN(baseURI)
 		if err != nil {
 			return "", f.errorHelper.InvalidArgument("invalid MySQL DSN format: %v", err)
