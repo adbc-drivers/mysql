@@ -302,11 +302,12 @@ func (f *mysqlConnectionFactory) CreateConnection(
 
 // NewDriver constructs the ADBC Driver for "mysql".
 func NewDriver(alloc memory.Allocator) adbc.Driver {
+	vendorName := "MySQL"
 	typeConverter := &mySQLTypeConverter{
-		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{},
+		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
 	}
 
-	driver := sqlwrapper.NewDriver(alloc, "mysql", "MySQL", typeConverter).
+	driver := sqlwrapper.NewDriver(alloc, "mysql", vendorName, NewMySQLDBFactory(), typeConverter).
 		WithConnectionFactory(&mysqlConnectionFactory{})
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
 		adbc.InfoDriverName:      "ADBC Driver Foundry Driver for MySQL",
