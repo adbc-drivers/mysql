@@ -43,27 +43,6 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 	nullable := colType.Nullable
 
 	switch typeName {
-	case "JSON":
-		metadataMap := map[string]string{
-			"sql.database_type_name": colType.DatabaseTypeName,
-			"sql.column_name":        colType.Name,
-		}
-
-		// Add length if available
-		if colType.Length != nil {
-			metadataMap["sql.length"] = fmt.Sprintf("%d", *colType.Length)
-		}
-
-		metadata := arrow.MetadataFrom(metadataMap)
-
-		// Convert MySQL JSON to Arrow JSON extension type
-		jsonType, err := extensions.NewJSONType(arrow.BinaryTypes.String)
-		if err != nil {
-			return nil, false, metadata, fmt.Errorf("failed to create JSON extension type: %w", err)
-		}
-
-		return jsonType, nullable, metadata, nil
-
 	case "BIT":
 		// Handle BIT type as binary data
 		metadataMap := map[string]string{
@@ -102,16 +81,6 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 
 		metadata := arrow.MetadataFrom(metadataMap)
 		return arrow.BinaryTypes.String, nullable, metadata, nil
-
-	case "TINYINT":
-		metadataMap := map[string]string{
-			"sql.database_type_name": colType.DatabaseTypeName,
-			"sql.column_name":        colType.Name,
-		}
-
-		metadata := arrow.MetadataFrom(metadataMap)
-
-		return arrow.PrimitiveTypes.Int8, nullable, metadata, nil
 
 	default:
 		// Fall back to default conversion for standard types
@@ -152,19 +121,14 @@ func (ins *mysqlJSONInserter) AppendValue(sqlValue any) error {
 		return nil
 	}
 
-	var val string
-	switch v := sqlValue.(type) {
-	case []byte:
-		val = string(v)
-	case string:
-		val = v
-	default:
-		val = fmt.Sprintf("%v", sqlValue)
+	t, ok := sqlValue.([]byte)
+	if !ok {
+		return fmt.Errorf("expected []byte for mysql json inserter, got %T", sqlValue)
 	}
 
 	// For extension types, we need to use AppendValueFromString
 	// since the ExtensionBuilder doesn't implement StringLikeBuilder.Append
-	return ins.builder.AppendValueFromString(val)
+	return ins.builder.AppendValueFromString(string(t))
 }
 
 type mysqlBitInserter struct {
@@ -177,17 +141,12 @@ func (ins *mysqlBitInserter) AppendValue(sqlValue any) error {
 		return nil
 	}
 
-	var val []byte
-	switch v := sqlValue.(type) {
-	case []byte:
-		val = v
-	case string:
-		val = []byte(v)
-	default:
-		val = []byte(fmt.Sprintf("%v", sqlValue))
+	t, ok := sqlValue.([]byte)
+	if !ok {
+		return fmt.Errorf("expected []byte for mysql bit inserter, got %T", sqlValue)
 	}
 
-	ins.builder.Append(val)
+	ins.builder.Append(t)
 	return nil
 }
 
@@ -201,17 +160,12 @@ func (ins *mysqlSpatialInserter) AppendValue(sqlValue any) error {
 		return nil
 	}
 
-	var val []byte
-	switch v := sqlValue.(type) {
-	case []byte:
-		val = v
-	case string:
-		val = []byte(v)
-	default:
-		val = []byte(fmt.Sprintf("%v", sqlValue))
+	t, ok := sqlValue.([]byte)
+	if !ok {
+		return fmt.Errorf("expected []byte for mysql spatial inserter, got %T", sqlValue)
 	}
 
-	ins.builder.Append(val)
+	ins.builder.Append(t)
 	return nil
 }
 
@@ -228,24 +182,6 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		jsonStr := a.ValueStr(index)
 		v := variant.New(jsonStr)
 		return v, nil
-
-	case *array.Binary:
-		if dbTypeName, ok := field.Metadata.GetValue("sql.database_type_name"); ok && dbTypeName == "BIT" {
-			// For BIT fields, return the binary data as-is
-			// This preserves the exact bit representation from the database
-			bitData := a.Value(index)
-			return bitData, nil
-		}
-
-		// Check if this is a spatial column
-		if isSpatial, ok := field.Metadata.GetValue("mysql.is_spatial"); ok && isSpatial == "true" {
-			// For spatial fields, return the binary data as-is
-			// In a full implementation, we might parse WKB to geometry objects
-			spatialData := a.Value(index)
-			return spatialData, nil
-		}
-		// Fall through to default binary handling
-		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
 
 	case *array.Time32:
 		// For MySQL driver, always convert Time32 arrays to time-only format strings
