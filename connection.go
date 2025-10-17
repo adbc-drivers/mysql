@@ -48,7 +48,7 @@ func (c *mysqlConnectionImpl) GetCurrentDbSchema() (string, error) {
 
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) SetCurrentCatalog(catalog string) error {
-	_, err := c.Db.ExecContext(context.Background(), "USE "+catalog)
+	_, err := c.Db.ExecContext(context.Background(), "USE "+quoteIdentifier(catalog))
 	return err
 }
 
@@ -84,7 +84,6 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 		NumericScale           sql.NullInt64
 	}
 
-	// Build query to get column information including precision/scale from INFORMATION_SCHEMA
 	query := `SELECT
 		ORDINAL_POSITION,
 		COLUMN_NAME,
@@ -105,7 +104,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 		// Use current database
 		currentDB, err := c.GetCurrentCatalog()
 		if err != nil {
-			return nil, c.Base().ErrorHelper.IO("failed to get current database: %v", err)
+			return nil, err
 		}
 		args = []any{currentDB, tableName}
 	}
@@ -142,7 +141,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	}
 
 	if len(columns) == 0 {
-		return nil, c.Base().ErrorHelper.InvalidArgument("table not found: %s", tableName)
+		return nil, c.Base().ErrorHelper.NotFound("table not found: %s", tableName)
 	}
 
 	// Build Arrow schema from column information using type converter
@@ -211,12 +210,12 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 
 	// Build INSERT statement (once for all batches)
 	var placeholders []string
-	for i := 0; i < int(schema.NumFields()); i++ {
+	for range int(schema.NumFields()) {
 		placeholders = append(placeholders, "?")
 	}
 
-	insertSQL := fmt.Sprintf("INSERT INTO `%s` VALUES (%s)",
-		options.TableName,
+	insertSQL := fmt.Sprintf("INSERT INTO %s VALUES (%s)",
+		quoteIdentifier(options.TableName),
 		strings.Join(placeholders, ", "))
 
 	// Prepare the statement (once for all batches)
@@ -228,6 +227,8 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 		err = errors.Join(err, stmt.Close())
 	}()
 
+	params := make([]any, len(schema.Fields()))
+
 	// Process each record batch in the stream
 	for stream.Next() {
 		record := stream.RecordBatch()
@@ -235,8 +236,6 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 		// Insert each row
 		rowsInBatch := int(record.NumRows())
 		for rowIdx := range rowsInBatch {
-			params := make([]any, record.NumCols())
-
 			for colIdx := range int(record.NumCols()) {
 				arr := record.Column(colIdx)
 				field := schema.Field(colIdx)
@@ -278,8 +277,10 @@ func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 		// Create the table if it doesn't exist
 		return c.createTable(ctx, conn, tableName, schema, true)
 	case adbc.OptionValueIngestModeReplace:
-		// Drop and recreate the table (ignore error if table doesn't exist)
-		_ = c.dropTable(ctx, conn, tableName)
+		// Drop and recreate the table
+		if err := c.dropTable(ctx, conn, tableName); err != nil {
+			return err
+		}
 		return c.createTable(ctx, conn, tableName, schema, false)
 	case adbc.OptionValueIngestModeAppend:
 		// Table should already exist, do nothing
@@ -296,18 +297,16 @@ func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 	if ifNotExists {
 		queryBuilder.WriteString("IF NOT EXISTS ")
 	}
-	queryBuilder.WriteString("`")
-	queryBuilder.WriteString(tableName)
-	queryBuilder.WriteString("` (")
+	queryBuilder.WriteString(quoteIdentifier(tableName))
+	queryBuilder.WriteString(" (")
 
 	for i, field := range schema.Fields() {
 		if i > 0 {
 			queryBuilder.WriteString(", ")
 		}
 
-		queryBuilder.WriteString("`")
-		queryBuilder.WriteString(field.Name)
-		queryBuilder.WriteString("` ")
+		queryBuilder.WriteString(quoteIdentifier(field.Name))
+		queryBuilder.WriteString(" ")
 
 		// Convert Arrow type to MySQL type
 		mysqlType := c.arrowToMySQLType(field.Type, field.Nullable)
@@ -322,7 +321,7 @@ func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 
 // dropTable drops a MySQL table
 func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string) error {
-	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tableName)
+	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", quoteIdentifier(tableName))
 	_, err := conn.ExecContext(ctx, dropSQL)
 	return err
 }
@@ -366,7 +365,8 @@ func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullabl
 		case arrow.Nanosecond:
 			precision = "(6)" // MySQL max is 6 digits
 		default:
-			precision = ""
+			// should never happen, but panic here for defensive programming
+			panic(fmt.Sprintf("unexpected Arrow timestamp unit: %v", arrowType.Unit))
 		}
 
 		// Use DATETIME for timezone-naive timestamps, TIMESTAMP for timezone-aware
@@ -385,7 +385,8 @@ func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullabl
 		case arrow.Millisecond:
 			mysqlType = "TIME(3)"
 		default:
-			mysqlType = "TIME"
+			// should never happen, but panic here for defensive programming
+			panic(fmt.Sprintf("unexpected Time32 unit: %v", arrowType.Unit))
 		}
 
 	case *arrow.Time64Type:
@@ -396,14 +397,11 @@ func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullabl
 		case arrow.Nanosecond:
 			mysqlType = "TIME(6)" // MySQL max is 6 digits
 		default:
-			mysqlType = "TIME"
+			// should never happen, but panic here for defensive programming
+			panic(fmt.Sprintf("unexpected Time64 unit: %v", arrowType.Unit))
 		}
-	case *arrow.Decimal32Type, *arrow.Decimal64Type, *arrow.Decimal128Type, *arrow.Decimal256Type:
-		if decType, ok := arrowType.(arrow.DecimalType); ok {
-			mysqlType = fmt.Sprintf("DECIMAL(%d,%d)", decType.GetPrecision(), decType.GetScale())
-		} else {
-			mysqlType = "DECIMAL(10,2)"
-		}
+	case arrow.DecimalType:
+		mysqlType = fmt.Sprintf("DECIMAL(%d,%d)", arrowType.GetPrecision(), arrowType.GetScale())
 	default:
 		// Default to TEXT for unknown types
 		mysqlType = "TEXT"
@@ -416,4 +414,8 @@ func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullabl
 	}
 
 	return mysqlType
+}
+
+func quoteIdentifier(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }
