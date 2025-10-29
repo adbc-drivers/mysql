@@ -38,7 +38,7 @@ repos:
   hooks:
   - id: golangci-lint
     name: lint
-    entry: bash -c 'golangci-lint run --fix --timeout 5m'
+    entry: bash -c 'cd go && golangci-lint run --fix --timeout 5m'
     types_or: [go, go-mod]
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -55,7 +55,7 @@ repos:
     exclude: '\.bat$'
   - id: trailing-whitespace
 
-- repo: git@github.com:adbc-drivers/dev
-  rev: f5779f2109f177f7da6394d3427589a3a84eb521
+- repo: https://github.com/adbc-drivers/dev
+  rev: 19b7466f3177cf978db8c7a444f8710bd850e66c
   hooks:
   - id: rat
