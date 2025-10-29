@@ -17,20 +17,22 @@
 # How to Contribute
 
 All contributors are expected to follow the [Code of
-Conduct](CODE_OF_CONDUCT.md).
+Conduct](https://github.com/adbc-drivers/mysql?tab=coc-ov-file#readme).
 
-## Reporting Issues
+## Reporting Issues and Making Feature Requests
 
 Please file issues and feature requests on the GitHub issue tracker:
 https://github.com/adbc-drivers/mysql/issues
 
 Potential security vulnerabilities should be reported to
 [security@adbc-drivers.org](mailto:security@adbc-drivers.org) instead.  See
-[SECURITY.md](./SECURITY.md).
+the [Security
+Policy](https://github.com/adbc-drivers/mysql?tab=security-ov-file#readme).
 
 ## Build and Test
 
 For basic development, the driver can be built and tested like any Go project.
+From the `go/` subdirectory:
 
 ```shell
 $ go build ./...
@@ -47,11 +49,10 @@ $ pixi run make
 
 To run the validation suite, you will first need to build the shared library.
 You will also need to set up a MySQL instance (see [the validation
-README](./validation/README.md)).  Finally, from the `validation/`
-subdirectory:
+README](./go/validation/README.md)).  Finally, from the `go/` subdirectory:
 
 ```shell
-$ pixi run test
+$ pixi run validate
 ```
 
 This will produce a test report, which can be rendered into a documentation
@@ -81,12 +82,14 @@ When writing the pull request description:
 
 - Ensure the title follows [Conventional
   Commits](https://www.conventionalcommits.org/en/v1.0.0/) format.  The
-  component is not necessary (in general: it should be a directory path
-  relative to the repo root).  Example titles:
+  component should be `go` if it affects the Go driver, or it can be omitted
+  for general maintenance (in general: it should be a directory path relative
+  to the repo root, e.g. `go/auth` would also be valid if that directory
+  existed).  Example titles:
 
-  - `feat: support new data type`
+  - `feat(go): support new data type`
   - `chore: update action versions`
-  - `fix!: return ns instead of us`
+  - `fix!:(go) return ns instead of us`
 
   Ensure that breaking changes are appropriately flagged with a `!` as seen
   in the last example above.
