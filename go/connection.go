@@ -347,8 +347,10 @@ func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullabl
 		mysqlType = "DOUBLE"
 	case *arrow.StringType:
 		mysqlType = "TEXT"
-	case *arrow.BinaryType:
+	case *arrow.BinaryType, *arrow.FixedSizeBinaryType, *arrow.BinaryViewType:
 		mysqlType = "BLOB"
+	case *arrow.LargeBinaryType:
+		mysqlType = "LONGBLOB"
 	case *arrow.Date32Type:
 		mysqlType = "DATE"
 	case *arrow.TimestampType:
