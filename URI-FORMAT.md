@@ -14,7 +14,7 @@
   limitations under the License.
 -->
 
-# Connection string formar for MySQL
+# Connection string format for MySQL
 
 mysql://[username[:password]@]host[:port][/database][?param1=value1&param2=value2]
 
