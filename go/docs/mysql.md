@@ -48,7 +48,9 @@ Components:
 - Schema: Optional (can be empty, MySQL database name)
 - Query params: MySQL connection attributes
 
-**Important**: Percent encoding must be used for reserved characters in URI elements. For example, `@` becomes `%40`. If you include a zone ID in an IPv6 address, the `%` character used as the separator must be replaced with `%25`.
+:::{note}
+Reserved characters in URI elements must be URI-encoded. For example, `@` becomes `%40`. If you include a zone ID in an IPv6 address, the `%` character used as the separator must be replaced with `%25`.
+:::
 
 **Socket Connections**: Use either percent encoding (`/path%2Fto%2Fsocket.sock`) or parentheses (`(/path/to/socket.sock)`).
 
