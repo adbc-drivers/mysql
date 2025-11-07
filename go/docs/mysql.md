@@ -58,7 +58,7 @@ Examples:
 - mysql://localhost/mydb
 - mysql://user:pass@localhost:3306/mydb
 - mysql://user:pass@host/db?charset=utf8mb4&timeout=30s
-- mysql://user@/path%2Fto%2Fsocket.sock/db (socket with percent encoding)
+- mysql://user@/path%2Fto%2Fsocket.sock/db (domain socket with percent encoding)
 - mysql://user@(/path/to/socket.sock)/db (socket with parentheses)
 - mysql://user@localhost/mydb (no password)
 
