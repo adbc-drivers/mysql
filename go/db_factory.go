@@ -41,7 +41,7 @@ func NewMySQLDBFactory() *MySQLDBFactory {
 
 // CreateDB creates a *sql.DB using sql.Open with a MySQL-specific DSN.
 func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts map[string]string) (*sql.DB, error) {
-	dsn, err := f.buildMySQLDSN(opts)
+	dsn, err := f.BuildMySQLDSN(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 //  1. MySQL URI: "mysql://user:pass@host:port/schema?params" → converted to DSN
 //  2. Full DSN: "user:pass@tcp(host:port)/db" → returned as-is or credentials updated
 //  3. Plain host + credentials: "localhost:3306" + username/password → converted to DSN
-func (f *MySQLDBFactory) buildMySQLDSN(opts map[string]string) (string, error) {
+func (f *MySQLDBFactory) BuildMySQLDSN(opts map[string]string) (string, error) {
 	baseURI := opts[adbc.OptionKeyURI]
 	username := opts[adbc.OptionKeyUsername]
 	password := opts[adbc.OptionKeyPassword]
@@ -147,7 +147,7 @@ func (f *MySQLDBFactory) parseToMySQLDSN(mysqlURI, username, password string) (s
 		if u.Port() != "" {
 			cfg.Addr = u.Host
 		} else {
-			cfg.Addr = u.Hostname() + ":3306"
+			cfg.Addr = u.Host + ":3306"
 		}
 		dbPath = u.Path
 	}
