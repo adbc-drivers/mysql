@@ -681,3 +681,230 @@ func TestMySQLTypeTests(t *testing.T) {
 func TestMySQLIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(MySQLTestSuite))
 }
+
+// TestURIParsing tests the parseToMySQLDSN function with various URI formats
+func TestURIParsing(t *testing.T) {
+	factory := mysql.NewMySQLDBFactory()
+
+	tests := []struct {
+		name          string
+		mysqlURI      string
+		username      string
+		password      string
+		expectedDSN   string
+		shouldError   bool
+		errorContains string
+	}{
+		// TCP connection variations
+		{
+			name:        "basic tcp with port",
+			mysqlURI:    "mysql://user:pass@localhost:3306/testdb",
+			expectedDSN: "user:pass@tcp(localhost:3306)/testdb",
+		},
+		{
+			name:        "tcp without port - should default to 3306",
+			mysqlURI:    "mysql://user:pass@localhost/testdb",
+			expectedDSN: "user:pass@tcp(localhost:3306)/testdb",
+		},
+		{
+			name:          "tcp without host - should be invalid",
+			mysqlURI:      "mysql://user:pass@/testdb",
+			shouldError:   true,
+			errorContains: "missing hostname in URI",
+		},
+		{
+			name:        "tcp without database",
+			mysqlURI:    "mysql://user:pass@localhost:3306",
+			expectedDSN: "user:pass@tcp(localhost:3306)/",
+		},
+		{
+			name:        "tcp without database but with slash",
+			mysqlURI:    "mysql://user:pass@localhost:3306/",
+			expectedDSN: "user:pass@tcp(localhost:3306)/",
+		},
+		{
+			name:        "tcp with custom port",
+			mysqlURI:    "mysql://user:pass@example.com:3307/myapp",
+			expectedDSN: "user:pass@tcp(example.com:3307)/myapp",
+		},
+		{
+			name:        "tcp with ip address",
+			mysqlURI:    "mysql://user:pass@127.0.0.1:3306/testdb",
+			expectedDSN: "user:pass@tcp(127.0.0.1:3306)/testdb",
+		},
+		{
+			name:        "tcp with ipv6 host",
+			mysqlURI:    "mysql://user:pass@[::1]:3306/testdb",
+			expectedDSN: "user:pass@tcp([::1]:3306)/testdb",
+		},
+		{
+			name:        "tcp with ipv6 host, default port",
+			mysqlURI:    "mysql://user:pass@[::1]/testdb",
+			expectedDSN: "user:pass@tcp([::1]:3306)/testdb",
+		},
+
+		// Credential handling variations
+		{
+			name:        "no credentials in uri",
+			mysqlURI:    "mysql://localhost:3306/testdb",
+			expectedDSN: "tcp(localhost:3306)/testdb",
+		},
+		{
+			name:        "only username in uri",
+			mysqlURI:    "mysql://user@localhost:3306/testdb",
+			expectedDSN: "user@tcp(localhost:3306)/testdb",
+		},
+		{
+			name:        "override credentials with options",
+			mysqlURI:    "mysql://olduser:oldpass@localhost:3306/testdb",
+			username:    "newuser",
+			password:    "newpass",
+			expectedDSN: "newuser:newpass@tcp(localhost:3306)/testdb",
+		},
+		{
+			name:        "add credentials via options",
+			mysqlURI:    "mysql://localhost:3306/testdb",
+			username:    "admin",
+			password:    "secret",
+			expectedDSN: "admin:secret@tcp(localhost:3306)/testdb",
+		},
+		{
+			name:        "override only username",
+			mysqlURI:    "mysql://user:pass@localhost:3306/testdb",
+			username:    "newuser",
+			expectedDSN: "newuser:pass@tcp(localhost:3306)/testdb",
+		},
+		{
+			name:        "override only password",
+			mysqlURI:    "mysql://user:pass@localhost:3306/testdb",
+			password:    "newpass",
+			expectedDSN: "user:newpass@tcp(localhost:3306)/testdb",
+		},
+
+		// Query parameter variations
+		{
+			name:        "single query parameter",
+			mysqlURI:    "mysql://user:pass@localhost:3306/testdb?charset=utf8mb4",
+			expectedDSN: "user:pass@tcp(localhost:3306)/testdb?charset=utf8mb4",
+		},
+		{
+			name:        "multiple query parameters",
+			mysqlURI:    "mysql://user:pass@localhost:3306/testdb?charset=utf8mb4&timeout=30s&tls=false",
+			expectedDSN: "user:pass@tcp(localhost:3306)/testdb?charset=utf8mb4&timeout=30s&tls=false",
+		},
+		{
+			name:        "ssl parameters",
+			mysqlURI:    "mysql://user:pass@localhost:3306/testdb?tls=skip-verify&timeout=10s",
+			expectedDSN: "user:pass@tcp(localhost:3306)/testdb?tls=skip-verify&timeout=10s",
+		},
+		{
+			name:        "url encoded database name",
+			mysqlURI:    "mysql://user:pass@localhost:3306/test%20db?charset=utf8",
+			expectedDSN: "user:pass@tcp(localhost:3306)/test%20db?charset=utf8",
+		},
+		{
+			name:        "query parameters with encoding",
+			mysqlURI:    "mysql://user:pass@localhost/testdb?time_zone=%27%2B00%3A00%27",
+			expectedDSN: "user:pass@tcp(localhost:3306)/testdb?time_zone=%27%2B00%3A00%27",
+		},
+
+		// Unix socket variations
+		{
+			name:        "unix socket with parentheses",
+			mysqlURI:    "mysql://user:pass@(/tmp/mysql.sock)/testdb",
+			expectedDSN: "user:pass@unix(/tmp/mysql.sock)/testdb",
+		},
+		{
+			name:          "unix socket with percent encoding - should be invalid. Must use parenthesis",
+			mysqlURI:      "mysql://user:pass@/tmp%2Fmysql.sock/testdb",
+			shouldError:   true,
+			errorContains: "missing hostname in URI",
+		},
+		{
+			name:        "unix socket with complex path",
+			mysqlURI:    "mysql://user:pass@(/var/run/mysqld/mysqld.sock)/myapp",
+			expectedDSN: "user:pass@unix(/var/run/mysqld/mysqld.sock)/myapp",
+		},
+		{
+			name:        "unix socket without database",
+			mysqlURI:    "mysql://user:pass@(/tmp/mysql.sock)",
+			expectedDSN: "user:pass@unix(/tmp/mysql.sock)/",
+		},
+		{
+			name:        "unix socket with query params",
+			mysqlURI:    "mysql://user:pass@(/tmp/mysql.sock)/testdb?charset=utf8mb4",
+			expectedDSN: "user:pass@unix(/tmp/mysql.sock)/testdb?charset=utf8mb4",
+		},
+		{
+			name:          "unix socket with empty host (ambiguous) - should be invalid",
+			mysqlURI:      "mysql://user:pass@/tmp/mysql.sock/testdb",
+			shouldError:   true,
+			errorContains: "missing hostname in URI",
+		},
+		{
+			name:          "invalid unix socket (missing parenthesis)",
+			mysqlURI:      "mysql://user@(/tmp/mysql.sock/testdb",
+			shouldError:   true,
+			errorContains: "missing closing ')'",
+		},
+		{
+			name:        "unix socket (paren) with encoded db name",
+			mysqlURI:    "mysql://user:pass@(/tmp/mysql.sock)/my%20db?foo=bar",
+			expectedDSN: "user:pass@unix(/tmp/mysql.sock)/my%20db?foo=bar",
+		},
+		// Special characters and edge cases
+		{
+			name:        "credentials with special characters",
+			mysqlURI:    "mysql://my%40user:p%40ss%24word@localhost:3306/testdb",
+			expectedDSN: "my@user:p@ss$word@tcp(localhost:3306)/testdb",
+		},
+
+		// Error cases
+		{
+			name:          "invalid mysql uri format",
+			mysqlURI:      "mysql://[invalid-uri",
+			shouldError:   true,
+			errorContains: "invalid MySQL URI format",
+		},
+		{
+			name:          "invalid socket path encoding",
+			mysqlURI:      "mysql://user:pass@%ZZ%invalid/testdb",
+			shouldError:   true,
+			errorContains: "invalid MySQL URI format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := map[string]string{
+				adbc.OptionKeyURI: tt.mysqlURI,
+			}
+			if tt.username != "" {
+				opts[adbc.OptionKeyUsername] = tt.username
+			}
+			if tt.password != "" {
+				opts[adbc.OptionKeyPassword] = tt.password
+			}
+
+			result, err := factory.BuildMySQLDSN(opts)
+
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("expected error containing '%s', but got no error", tt.errorContains)
+				} else if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing '%s', got: %v", tt.errorContains, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if result != tt.expectedDSN {
+				t.Errorf("expected DSN: %s, got: %s", tt.expectedDSN, result)
+			}
+		})
+	}
+}

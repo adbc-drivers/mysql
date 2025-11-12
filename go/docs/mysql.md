@@ -43,7 +43,7 @@ Components:
 - Scheme: mysql:// (required)
 - User: Optional (for authentication)
 - Password: Optional (for authentication, requires user)
-- Host: Required (defaults to localhost, or socket path)
+- Host: Required (must be explicitly specified)
 - Port: Optional (defaults to 3306)
 - Schema: Optional (can be empty, MySQL database name)
 - Query params: MySQL connection attributes
@@ -52,14 +52,13 @@ Components:
 Reserved characters in URI elements must be URI-encoded. For example, `@` becomes `%40`. If you include a zone ID in an IPv6 address, the `%` character used as the separator must be replaced with `%25`.
 :::
 
-When connecting via Unix domain sockets, either URI-encode the path (`/path%2Fto%2Fsocket.sock`) or wrap the path in parentheses (`(/path/to/socket.sock)`).
+When connecting via Unix domain sockets, use the parentheses syntax to wrap the socket path: `(/path/to/socket.sock)`.
 
 Examples:
 - mysql://localhost/mydb
 - mysql://user:pass@localhost:3306/mydb
 - mysql://user:pass@host/db?charset=utf8mb4&timeout=30s
-- mysql://user@/path%2Fto%2Fsocket.sock/db (domain socket with percent encoding)
-- mysql://user@(/path/to/socket.sock)/db (domain socket with parentheses)
+- mysql://user@(/path/to/socket.sock)/db (Unix domain socket)
 - mysql://user@localhost/mydb (no password)
 
 The driver also supports the MySQL DSN format (see [Go MySQL Driver documentation](https://github.com/go-sql-driver/mysql?tab=readme-ov-file#dsn-data-source-name)), but standard URIs are recommended.
