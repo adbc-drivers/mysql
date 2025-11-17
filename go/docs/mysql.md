@@ -18,7 +18,7 @@
 {{ cross_reference|safe }}
 # MySQL Driver {{ version }}
 
-{{ version_header|safe }}
+{{ heading|safe }}
 
 This driver provides access to [MySQL][mysql]{target="_blank"}, a free and
 open-source relational database management system.
@@ -74,3 +74,7 @@ The driver also supports the MySQL DSN format (see [Go MySQL Driver documentatio
 {{ footnotes|safe }}
 
 [mysql]: https://www.mysql.com/
+
+## Versions Tested
+
+{{ version_detail|safe }}
