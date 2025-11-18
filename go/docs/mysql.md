@@ -23,13 +23,32 @@
 This driver provides access to [MySQL][mysql]{target="_blank"}, a free and
 open-source relational database management system.
 
-## Installation & Quickstart
+## Installation
 
-The driver can be installed with `dbc`.
+The MySQL driver can be installed with [dbc](https://docs.columnar.tech/dbc):
 
-To use the driver, provide a MySQL connection string as the `url` option. The driver supports both standard MySQL URIs and DSN-style connection strings, but standard URIs are recommended.
+```bash
+dbc install mysql
+```
 
-## Connection String Format
+## Connecting
+
+To connect, you'll need to edit the `uri` below with a URI in the DSN (Data Source Name) format used by the [Go MySQL driver](https://pkg.go.dev/github.com/go-sql-driver/mysql#section-readme).
+
+```python
+from adbc_driver_manager import dbapi
+
+conn = dbapi.connect(
+  driver="mysql",
+  db_kwargs = {
+    "uri": "root@tcp(localhost:3306)/demo"
+  }
+)
+```
+
+Note: The example above is for Python using the [adbc-driver-manager](https://pypi.org/project/adbc-driver-manager) package but the process will be similar for other driver managers.
+
+### Connection String Format
 
 MySQL's standard URI syntax:
 
