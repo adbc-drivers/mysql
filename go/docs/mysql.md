@@ -33,7 +33,7 @@ dbc install mysql
 
 ## Connecting
 
-To connect, you'll need to edit the `uri` below with a URI in the DSN (Data Source Name) format used by the [Go MySQL driver](https://pkg.go.dev/github.com/go-sql-driver/mysql#section-readme).
+To connect, you'll need to edit the `uri` to match the DSN (Data Source Name) format used by the [Go MySQL driver](https://pkg.go.dev/github.com/go-sql-driver/mysql#section-readme).
 
 ```python
 from adbc_driver_manager import dbapi
