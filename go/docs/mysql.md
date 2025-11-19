@@ -53,7 +53,7 @@ Note: The example above is for Python using the [adbc-driver-manager](https://py
 Connection strings are passed with the `uri` option which uses the following format:
 
 ```text
-[scheme://][user[:[password]]@]host[:port][/schema][?attribute1=value1&attribute2=value2...
+mysql://[user[:[password]]@]host[:port][/schema][?attribute1=value1&attribute2=value2...]
 ```
 
 Examples:
