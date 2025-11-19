@@ -91,10 +91,16 @@ The driver also supports the MySQL DSN format (see [Go MySQL Driver documentatio
 
 {{ types|safe }}
 
+## Compatibility
+
+{{ compatibility_info|safe }}
+
+## Previous Versions
+
+To see documentation for previous versions of this driver, see the following:
+
+- [v0.1.0](./v0.1.0.md)
+
 {{ footnotes|safe }}
 
 [mysql]: https://www.mysql.com/
-
-## Versions Tested
-
-{{ version_detail|safe }}
