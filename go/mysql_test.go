@@ -30,6 +30,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	mysql "github.com/adbc-drivers/mysql"
@@ -889,22 +891,12 @@ func TestURIParsing(t *testing.T) {
 			result, err := factory.BuildMySQLDSN(opts)
 
 			if tt.shouldError {
-				if err == nil {
-					t.Errorf("expected error containing '%s', but got no error", tt.errorContains)
-				} else if !strings.Contains(err.Error(), tt.errorContains) {
-					t.Errorf("expected error containing '%s', got: %v", tt.errorContains, err)
-				}
+				require.ErrorContains(t, err, tt.errorContains)
 				return
 			}
 
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-
-			if result != tt.expectedDSN {
-				t.Errorf("expected DSN: %s, got: %s", tt.expectedDSN, result)
-			}
+			require.NoError(t, err, "unexpected error")
+			assert.Equal(t, tt.expectedDSN, result, "DSN should match expected value")
 		})
 	}
 }
