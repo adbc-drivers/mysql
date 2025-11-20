@@ -891,8 +891,7 @@ func TestURIParsing(t *testing.T) {
 			result, err := factory.BuildMySQLDSN(opts)
 
 			if tt.shouldError {
-				require.Error(t, err, "expected an error but got none")
-				assert.Contains(t, err.Error(), tt.errorContains, "error message should contain expected text")
+				require.ErrorContains(t, err, tt.errorContains)
 				return
 			}
 
