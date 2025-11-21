@@ -67,7 +67,7 @@ Examples:
 This follows MySQL's official [URI-like connection string format](https://dev.mysql.com/doc/refman/8.4/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). Also see [MySQL Connection Parameters](https://dev.mysql.com/doc/refman/8.4/en/connecting-using-uri-or-key-value-pairs.html#connection-parameters-base) for the complete specification.
 
 Components:
-- `scheme`: `mysql://` (optional)
+- `scheme`: `mysql://` (required)
 - `user`: Optional (for authentication)
 - `password`: Optional (for authentication, requires user)
 - `host`: Required (must be explicitly specified)
