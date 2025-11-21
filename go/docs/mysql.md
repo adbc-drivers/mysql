@@ -18,34 +18,61 @@
 {{ cross_reference|safe }}
 # MySQL Driver {{ version }}
 
-{{ version_header|safe }}
+{{ heading|safe }}
 
 This driver provides access to [MySQL][mysql]{target="_blank"}, a free and
 open-source relational database management system.
 
-## Installation & Quickstart
+## Installation
 
-The driver can be installed with `dbc`.
+The MySQL driver can be installed with [dbc](https://docs.columnar.tech/dbc):
 
-To use the driver, provide a MySQL connection string as the `url` option. The driver supports both standard MySQL URIs and DSN-style connection strings, but standard URIs are recommended.
-
-## Connection String Format
-
-MySQL's standard URI syntax:
-
+```bash
+dbc install mysql
 ```
+
+## Connecting
+
+To connect, edit the `uri` option below to match your environment and run the following:
+
+```python
+from adbc_driver_manager import dbapi
+
+conn = dbapi.connect(
+  driver="mysql",
+  db_kwargs = {
+    "uri": "root@tcp(localhost:3306)/demo"
+  }
+)
+```
+
+Note: The example above is for Python using the [adbc-driver-manager](https://pypi.org/project/adbc-driver-manager) package but the process will be similar for other driver managers.
+
+### Connection String Format
+
+Connection strings are passed with the `uri` option which uses the following format:
+
+```text
 mysql://[user[:[password]]@]host[:port][/schema][?attribute1=value1&attribute2=value2...]
 ```
+
+Examples:
+
+- `mysql://localhost/mydb`
+- `mysql://user:pass@localhost:3306/mydb`
+- `mysql://user:pass@host/db?charset=utf8mb4&timeout=30s`
+- `mysql://user@(/path/to/socket.sock)/db` (Unix domain socket)
+- `mysql://user@localhost/mydb` (no password)
 
 This follows MySQL's official [URI-like connection string format](https://dev.mysql.com/doc/refman/8.4/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). Also see [MySQL Connection Parameters](https://dev.mysql.com/doc/refman/8.4/en/connecting-using-uri-or-key-value-pairs.html#connection-parameters-base) for the complete specification.
 
 Components:
-- Scheme: mysql:// (required)
-- User: Optional (for authentication)
-- Password: Optional (for authentication, requires user)
-- Host: Required (must be explicitly specified)
-- Port: Optional (defaults to 3306)
-- Schema: Optional (can be empty, MySQL database name)
+- `scheme`: `mysql://` (required)
+- `user`: Optional (for authentication)
+- `password`: Optional (for authentication, requires user)
+- `host`: Required (must be explicitly specified)
+- `port`: Optional (defaults to 3306)
+- `schema`: Optional (can be empty, MySQL database name)
 - Query params: MySQL connection attributes
 
 :::{note}
@@ -53,13 +80,6 @@ Reserved characters in URI elements must be URI-encoded. For example, `@` become
 :::
 
 When connecting via Unix domain sockets, use the parentheses syntax to wrap the socket path: `(/path/to/socket.sock)`.
-
-Examples:
-- mysql://localhost/mydb
-- mysql://user:pass@localhost:3306/mydb
-- mysql://user:pass@host/db?charset=utf8mb4&timeout=30s
-- mysql://user@(/path/to/socket.sock)/db (Unix domain socket)
-- mysql://user@localhost/mydb (no password)
 
 The driver also supports the MySQL DSN format (see [Go MySQL Driver documentation](https://github.com/go-sql-driver/mysql?tab=readme-ov-file#dsn-data-source-name)), but standard URIs are recommended.
 
@@ -70,6 +90,16 @@ The driver also supports the MySQL DSN format (see [Go MySQL Driver documentatio
 ### Types
 
 {{ types|safe }}
+
+## Compatibility
+
+{{ compatibility_info|safe }}
+
+## Previous Versions
+
+To see documentation for previous versions of this driver, see the following:
+
+- [v0.1.0](./v0.1.0.md)
 
 {{ footnotes|safe }}
 
