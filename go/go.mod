@@ -14,14 +14,14 @@
 
 module github.com/adbc-drivers/mysql
 
-go 1.25.0
+go 1.25.5
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20251017012033-5dd20242654c
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20251017012033-5dd20242654c
-	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20251017012033-5dd20242654c
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20251204005500-ef1acb8b4023
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20251204005500-ef1acb8b4023
+	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20251204005500-ef1acb8b4023
 	github.com/apache/arrow-adbc/go/adbc v1.9.0
-	github.com/apache/arrow-go/v18 v18.4.1
+	github.com/apache/arrow-go/v18 v18.4.2-0.20251124222331-4b04248429bc
 	github.com/go-ext/variant v1.2.4
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/stretchr/testify v1.11.1
@@ -29,7 +29,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20251017012033-5dd20242654c // indirect
+	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20251204005500-ef1acb8b4023 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apache/thrift v0.22.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -43,7 +43,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/compress v1.18.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
 	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
@@ -60,19 +60,19 @@ require (
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.8.0 // indirect
-	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b // indirect
-	golang.org/x/mod v0.29.0 // indirect
-	golang.org/x/net v0.46.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251014153721-24f779f6aaef // indirect
-	golang.org/x/text v0.30.0 // indirect
-	golang.org/x/tools v0.38.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
+	golang.org/x/exp v0.0.0-20251125195548-87e1e737ad39 // indirect
+	golang.org/x/mod v0.30.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/sync v0.18.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/telemetry v0.0.0-20251203150158-8fff8a5912fc // indirect
+	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/tools v0.39.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20251014184007-4626949a642f // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251014184007-4626949a642f // indirect
-	google.golang.org/grpc v1.76.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/grpc v1.77.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
