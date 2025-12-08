@@ -23,3 +23,19 @@ CREATE TABLE test_timestamp (
     idx INT,
     res DATETIME(6)
 );
+
+// part: bind
+
+{"idx": 3, "res": 1684158330123456}
+{"idx": 2, "res": 946684800123456}
+{"idx": 1, "res": -62135596799000000}
+{"idx": 4, "res": 253402300799999999}
+{"idx": 0, "res": null}
+
+// part: expected
+
+{"res": null}
+{"res": -62135596799000000}
+{"res": 946684800123456}
+{"res": 1684158330123456}
+{"res": 253402300799999999}
