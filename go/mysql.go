@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	// register the "mysql" driver with database/sql
 	_ "github.com/go-sql-driver/mysql"
@@ -81,6 +82,31 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 
 		metadata := arrow.MetadataFrom(metadataMap)
 		return arrow.BinaryTypes.String, nullable, metadata, nil
+
+	case "TIMESTAMP":
+		var timestampType arrow.DataType
+		metadataMap := map[string]string{
+			sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
+			sqlwrapper.MetaKeyColumnName:       colType.Name,
+		}
+
+		if colType.Precision != nil {
+			precision := *colType.Precision
+			metadataMap[sqlwrapper.MetaKeyFractionalSecondsPrecision] = fmt.Sprintf("%d", precision)
+			if precision > 6 {
+				precision = 6
+			}
+			timeUnit := arrow.TimeUnit(precision / 3)
+			// TODO: hardcoded to UTC for now. MySQL's TIMESTAMP retrieval converts the stored UTC value back to the SESSION timezone,
+			// so we must retrieve and set that zone here. (https://dev.mysql.com/doc/refman/9.5/en/datetime.html)
+			timestampType = &arrow.TimestampType{Unit: timeUnit, TimeZone: "UTC"}
+		} else {
+			// No precision info available, default to microseconds (most common)
+			timestampType = &arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}
+		}
+
+		metadata := arrow.MetadataFrom(metadataMap)
+		return timestampType, colType.Nullable, metadata, nil
 
 	default:
 		// Fall back to default conversion for standard types
@@ -196,6 +222,20 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		timeType := a.DataType().(*arrow.Time64Type)
 		t := a.Value(index).ToTime(timeType.Unit)
 		return t.Format("15:04:05.000000"), nil
+
+	case *array.Timestamp:
+		timestampType := a.DataType().(*arrow.TimestampType)
+		rawValue := a.Value(index)
+		t := rawValue.ToTime(timestampType.Unit)
+
+		// For nanosecond precision, truncate to microseconds
+		if timestampType.Unit == arrow.Nanosecond {
+			microseconds := t.UnixMicro()
+			converted := time.UnixMicro(microseconds).UTC()
+			return converted, nil
+		}
+
+		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
 
 	default:
 		// For all other types, use default conversion
