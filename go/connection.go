@@ -33,10 +33,10 @@ func (c *mysqlConnectionImpl) GetCurrentCatalog() (string, error) {
 	var database string
 	err := c.Db.QueryRowContext(context.Background(), "SELECT DATABASE()").Scan(&database)
 	if err != nil {
-		return "", c.Base().ErrorHelper.IO("failed to get current database: %v", err)
+		return "", c.ErrorHelper.WrapIO(err, "failed to get current database")
 	}
 	if database == "" {
-		return "", c.Base().ErrorHelper.InvalidState("no current database set")
+		return "", c.ErrorHelper.InvalidState("no current database set")
 	}
 	return database, nil
 }
@@ -55,7 +55,7 @@ func (c *mysqlConnectionImpl) SetCurrentCatalog(catalog string) error {
 // SetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) SetCurrentDbSchema(schema string) error {
 	if schema != "" {
-		return c.Base().ErrorHelper.InvalidArgument("cannot set schema in MySQL: schemas are not supported")
+		return c.ErrorHelper.InvalidArgument("cannot set schema in MySQL: schemas are not supported")
 	}
 	return nil
 }
@@ -64,7 +64,7 @@ func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes [
 	if c.version == "" {
 		var version, comment string
 		if err := c.Conn.QueryRowContext(ctx, "SELECT @@version, @@version_comment").Scan(&version, &comment); err != nil {
-			return c.ErrorHelper.Errorf(adbc.StatusInternal, "failed to get version: %v", err)
+			return c.ErrorHelper.WrapIO(err, "failed to get version")
 		}
 		c.version = fmt.Sprintf("%s (%s)", version, comment)
 	}
@@ -112,7 +112,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	// Execute query to get column information
 	rows, err := c.Conn.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, c.Base().ErrorHelper.IO("failed to query table schema: %v", err)
+		return nil, c.ErrorHelper.WrapIO(err, "failed to query table schema")
 	}
 	defer func() {
 		err = errors.Join(err, rows.Close())
@@ -131,17 +131,17 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 			&col.NumericScale,
 		)
 		if err != nil {
-			return nil, c.Base().ErrorHelper.IO("failed to scan column information: %v", err)
+			return nil, c.ErrorHelper.WrapIO(err, "failed to scan column information")
 		}
 		columns = append(columns, col)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, c.Base().ErrorHelper.IO("rows error: %v", err)
+		return nil, c.ErrorHelper.WrapIO(err, "rows error")
 	}
 
 	if len(columns) == 0 {
-		return nil, c.Base().ErrorHelper.NotFound("table not found: %s", tableName)
+		return nil, c.ErrorHelper.NotFound("table not found: %s", tableName)
 	}
 
 	// Build Arrow schema from column information using type converter
@@ -170,7 +170,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 
 		arrowType, nullable, metadata, err := c.TypeConverter.ConvertRawColumnType(colType)
 		if err != nil {
-			return nil, c.Base().ErrorHelper.IO("failed to convert column type for %s: %v", col.ColumnName, err)
+			return nil, c.ErrorHelper.WrapIO(err, "failed to convert column type for %s", col.ColumnName)
 		}
 
 		fields[i] = arrow.Field{
@@ -197,7 +197,7 @@ func (c *mysqlConnectionImpl) ListTableTypes(ctx context.Context) ([]string, err
 // ExecuteBulkIngest performs MySQL bulk ingest using INSERT statements
 func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	if stream == nil {
-		return -1, c.Base().ErrorHelper.InvalidArgument("stream cannot be nil")
+		return -1, c.ErrorHelper.InvalidArgument("stream cannot be nil")
 	}
 
 	var totalRowsInserted int64
@@ -205,7 +205,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 	// Get schema from stream and create table if needed
 	schema := stream.Schema()
 	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
-		return -1, c.Base().ErrorHelper.IO("failed to create table: %v", err)
+		return -1, c.ErrorHelper.WrapIO(err, "failed to create table")
 	}
 
 	// Build INSERT statement (once for all batches)
@@ -221,7 +221,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 	// Prepare the statement (once for all batches)
 	stmt, err := conn.PrepareContext(ctx, insertSQL)
 	if err != nil {
-		return -1, c.Base().ErrorHelper.IO("failed to prepare insert statement: %v", err)
+		return -1, c.ErrorHelper.WrapIO(err, "failed to prepare insert statement")
 	}
 	defer func() {
 		err = errors.Join(err, stmt.Close())
@@ -243,7 +243,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 				// Use type converter to get Go value
 				value, err := c.TypeConverter.ConvertArrowToGo(arr, rowIdx, &field)
 				if err != nil {
-					return -1, c.Base().ErrorHelper.IO("failed to convert value at row %d, col %d: %v", rowIdx, colIdx, err)
+					return -1, c.ErrorHelper.WrapIO(err, "failed to convert value at row %d, col %d", rowIdx, colIdx)
 				}
 				params[colIdx] = value
 			}
@@ -251,7 +251,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 			// Execute the insert
 			_, err := stmt.ExecContext(ctx, params...)
 			if err != nil {
-				return -1, c.Base().ErrorHelper.IO("failed to execute insert: %v", err)
+				return -1, c.ErrorHelper.WrapIO(err, "failed to execute insert")
 			}
 		}
 
@@ -261,7 +261,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 
 	// Check for stream errors
 	if err := stream.Err(); err != nil {
-		return -1, c.Base().ErrorHelper.IO("stream error: %v", err)
+		return -1, c.ErrorHelper.WrapIO(err, "stream error")
 	}
 
 	return totalRowsInserted, nil
@@ -286,7 +286,7 @@ func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 		// Table should already exist, do nothing
 		return nil
 	default:
-		return c.Base().ErrorHelper.InvalidArgument("unsupported ingest mode: %s", options.Mode)
+		return c.ErrorHelper.InvalidArgument("unsupported ingest mode: %s", options.Mode)
 	}
 }
 
