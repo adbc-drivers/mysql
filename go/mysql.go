@@ -282,7 +282,8 @@ func NewDriver(alloc memory.Allocator) adbc.Driver {
 	}
 
 	driver := sqlwrapper.NewDriver(alloc, "mysql", vendorName, NewMySQLDBFactory(), typeConverter).
-		WithConnectionFactory(&mysqlConnectionFactory{})
+		WithConnectionFactory(&mysqlConnectionFactory{}).
+		WithErrorInspector(MySQLErrorInspector{})
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
 		adbc.InfoDriverName:      "ADBC Driver Foundry Driver for MySQL",
 		adbc.InfoVendorSql:       true,

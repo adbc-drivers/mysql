@@ -79,7 +79,7 @@ def test_userpass_options_override_uri(
     }
 
     with pytest.raises(
-        adbc_driver_manager.dbapi.OperationalError,
+        adbc_driver_manager.dbapi.ProgrammingError,
         match="Access denied for user 'this_user_is_bad'",
     ):
         with adbc_driver_manager.dbapi.connect(driver=driver_path, db_kwargs=params):
@@ -351,7 +351,7 @@ def test_native_dsn_options_override(
     }
 
     with pytest.raises(
-        adbc_driver_manager.dbapi.OperationalError,
+        adbc_driver_manager.dbapi.ProgrammingError,
         match="Access denied for user 'this_user_is_bad'",
     ):
         with adbc_driver_manager.dbapi.connect(driver=driver_path, db_kwargs=params):

@@ -17,11 +17,11 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
 
-	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/go-sql-driver/mysql"
@@ -29,15 +29,11 @@ import (
 
 // MySQLDBFactory provides MySQL-specific database connection creation.
 // It uses the go-sql-driver/mysql Config struct for proper DSN formatting.
-type MySQLDBFactory struct {
-	errorHelper driverbase.ErrorHelper
-}
+type MySQLDBFactory struct{}
 
-// NewMySQLDBFactory creates a new MySQLDBFactory with proper error handling.
+// NewMySQLDBFactory creates a new MySQLDBFactory.
 func NewMySQLDBFactory() *MySQLDBFactory {
-	return &MySQLDBFactory{
-		errorHelper: driverbase.ErrorHelper{DriverName: "mysql"},
-	}
+	return &MySQLDBFactory{}
 }
 
 // CreateDB creates a *sql.DB using sql.Open with a MySQL-specific DSN.
@@ -60,7 +56,7 @@ func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 func (f *MySQLDBFactory) forceUTCTimezone(dsn string) (string, error) {
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
-		return "", f.errorHelper.InvalidArgument("failed to parse DSN for timezone override: %v", err)
+		return "", fmt.Errorf("failed to parse DSN for timezone override: %v", err)
 	}
 
 	if existingTz, exists := cfg.Params["time_zone"]; exists && existingTz != "'+00:00'" && existingTz != "'UTC'" {
@@ -96,7 +92,8 @@ func (f *MySQLDBFactory) BuildMySQLDSN(opts map[string]string) (string, error) {
 
 	// If no base URI provided, this is an error
 	if baseURI == "" {
-		return "", f.errorHelper.InvalidArgument("missing required option %s", adbc.OptionKeyURI)
+		// Return plain Go error. sqlwrapper will catch and wrap it with ErrorHelper and turn it into adbc error
+		return "", fmt.Errorf("missing required option %s", adbc.OptionKeyURI)
 	}
 
 	// Check if this is a MySQL URI (mysql://)
@@ -119,7 +116,7 @@ func (f *MySQLDBFactory) BuildMySQLDSN(opts map[string]string) (string, error) {
 func (f *MySQLDBFactory) parseToMySQLDSN(mysqlURI, username, password string) (string, error) {
 	u, err := url.Parse(mysqlURI)
 	if err != nil {
-		return "", f.errorHelper.InvalidArgument("invalid MySQL URI format: %v", err)
+		return "", fmt.Errorf("invalid MySQL URI format: %v", err)
 	}
 
 	cfg := mysql.NewConfig()
@@ -148,7 +145,7 @@ func (f *MySQLDBFactory) parseToMySQLDSN(mysqlURI, username, password string) (s
 
 		closeParenIndex := strings.Index(u.Path, ")")
 		if closeParenIndex == -1 {
-			return "", f.errorHelper.InvalidArgument("invalid MySQL URI: missing closing ')' for socket path in %s", u.Path)
+			return "", fmt.Errorf("invalid MySQL URI: missing closing ')' for socket path in %s", u.Path)
 		}
 
 		cfg.Addr = u.Path[:closeParenIndex]
@@ -157,7 +154,7 @@ func (f *MySQLDBFactory) parseToMySQLDSN(mysqlURI, username, password string) (s
 	case "":
 		// Case 2: Empty host is invalid - hostname must be explicit
 		// Use parentheses syntax for sockets: mysql://user@(/path/to/socket)/db
-		return "", f.errorHelper.InvalidArgument("missing hostname in URI: %s. Use explicit hostname or socket syntax: mysql://user@(socketpath)/db", mysqlURI)
+		return "", fmt.Errorf("missing hostname in URI: %s. Use explicit hostname or socket syntax: mysql://user@(socketpath)/db", mysqlURI)
 
 	default:
 		// Case 3: Regular TCP connection with a hostname
@@ -195,7 +192,7 @@ func (f *MySQLDBFactory) buildFromNativeDSN(baseURI, username, password string) 
 		// Try to parse as existing MySQL DSN
 		cfg, err = mysql.ParseDSN(baseURI)
 		if err != nil {
-			return "", f.errorHelper.InvalidArgument("invalid MySQL DSN format: %v", err)
+			return "", fmt.Errorf("invalid MySQL DSN format: %v", err)
 		}
 	} else {
 		// Treat as plain host string
