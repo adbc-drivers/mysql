@@ -17,6 +17,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"net/url"
 	"strings"
 
@@ -46,7 +47,45 @@ func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 		return nil, err
 	}
 
+	// Force UTC timezone for all connections
+	dsn, err = f.forceUTCTimezone(dsn)
+	if err != nil {
+		return nil, err
+	}
+
 	return sql.Open(driverName, dsn)
+}
+
+// forceUTCTimezone parses the DSN and overrides the time_zone and loc parameters to UTC
+func (f *MySQLDBFactory) forceUTCTimezone(dsn string) (string, error) {
+	// Parse the DSN
+	cfg, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return "", f.errorHelper.InvalidArgument("failed to parse DSN for timezone override: %v", err)
+	}
+
+	// Check if user has set a non-UTC timezone for session time_zone
+	if existingTz, exists := cfg.Params["time_zone"]; exists && existingTz != "'+00:00'" && existingTz != "'UTC'" {
+		slog.Warn("time_zone parameter is not supported, overriding to UTC",
+			"requested_timezone", existingTz,
+			"reason", "UTC is required for ADBC MySQL driver")
+	}
+
+	// Check if user has set a non-UTC location for parseTime
+	if existingLoc, exists := cfg.Params["loc"]; exists && existingLoc != "UTC" {
+		slog.Warn("loc parameter is not supported, overriding to UTC",
+			"requested_loc", existingLoc,
+			"reason", "UTC is required for ADBC MySQL driver")
+	}
+
+	// Force UTC timezone (override any existing time_zone and loc parameters)
+	if cfg.Params == nil {
+		cfg.Params = make(map[string]string)
+	}
+	cfg.Params["time_zone"] = "'+00:00'"
+	cfg.Params["loc"] = "UTC"
+
+	return cfg.FormatDSN(), nil
 }
 
 // buildMySQLDSN constructs a MySQL DSN from the provided options.

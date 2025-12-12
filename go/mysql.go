@@ -97,8 +97,6 @@ func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 				precision = 6
 			}
 			timeUnit := arrow.TimeUnit(precision / 3)
-			// TODO: hardcoded to UTC for now. MySQL's TIMESTAMP retrieval converts the stored UTC value back to the SESSION timezone,
-			// so we must retrieve and set that zone here. (https://dev.mysql.com/doc/refman/9.5/en/datetime.html)
 			timestampType = &arrow.TimestampType{Unit: timeUnit, TimeZone: "UTC"}
 		} else {
 			// No precision info available, default to microseconds (most common)
