@@ -30,7 +30,6 @@ import (
 // MySQLDBFactory provides MySQL-specific database connection creation.
 // It uses the go-sql-driver/mysql Config struct for proper DSN formatting.
 type MySQLDBFactory struct {
-	logger *slog.Logger
 }
 
 // NewMySQLDBFactory creates a new MySQLDBFactory.
@@ -38,20 +37,15 @@ func NewMySQLDBFactory() *MySQLDBFactory {
 	return &MySQLDBFactory{}
 }
 
-// SetLogger sets the logger for this factory. This method is called by sqlwrapper if the factory implements DBFactoryWithLogger.
-func (f *MySQLDBFactory) SetLogger(logger *slog.Logger) {
-	f.logger = logger
-}
-
 // CreateDB creates a *sql.DB using sql.Open with a MySQL-specific DSN.
-func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts map[string]string) (*sql.DB, error) {
+func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts map[string]string, logger *slog.Logger) (*sql.DB, error) {
 	dsn, err := f.BuildMySQLDSN(opts)
 	if err != nil {
 		return nil, err
 	}
 
 	// Force UTC timezone for all connections to ensure consistent timestamp handling.
-	dsn, err = f.forceUTCTimezone(dsn)
+	dsn, err = f.forceUTCTimezone(dsn, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -60,23 +54,23 @@ func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 }
 
 // forceUTCTimezone parses the DSN and overrides the time_zone and loc parameters to UTC
-func (f *MySQLDBFactory) forceUTCTimezone(dsn string) (string, error) {
+func (f *MySQLDBFactory) forceUTCTimezone(dsn string, logger *slog.Logger) (string, error) {
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse DSN for timezone override: %v", err)
 	}
 
 	if existingTz, exists := cfg.Params["time_zone"]; exists && existingTz != "'+00:00'" && existingTz != "'UTC'" {
-		if f.logger != nil {
-			f.logger.Warn("time_zone parameter is not supported, overriding to UTC",
+		if logger != nil {
+			logger.Warn("time_zone parameter is not supported, overriding to UTC",
 				"requested_timezone", existingTz,
 				"reason", "UTC is required for ADBC MySQL driver")
 		}
 	}
 
 	if existingLoc, exists := cfg.Params["loc"]; exists && existingLoc != "UTC" {
-		if f.logger != nil {
-			f.logger.Warn("loc parameter is not supported, overriding to UTC",
+		if logger != nil {
+			logger.Warn("loc parameter is not supported, overriding to UTC",
 				"requested_loc", existingLoc,
 				"reason", "UTC is required for ADBC MySQL driver")
 		}
@@ -223,4 +217,4 @@ func (f *MySQLDBFactory) buildFromNativeDSN(baseURI, username, password string) 
 	return cfg.FormatDSN(), nil
 }
 
-var _ sqlwrapper.DBFactoryWithLogger = (*MySQLDBFactory)(nil)
+var _ sqlwrapper.DBFactory = (*MySQLDBFactory)(nil)
