@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 
@@ -36,13 +37,51 @@ func NewMySQLDBFactory() *MySQLDBFactory {
 }
 
 // CreateDB creates a *sql.DB using sql.Open with a MySQL-specific DSN.
-func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts map[string]string) (*sql.DB, error) {
+func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts map[string]string, logger *slog.Logger) (*sql.DB, error) {
 	dsn, err := f.BuildMySQLDSN(opts)
 	if err != nil {
 		return nil, err
 	}
 
+	// Force UTC timezone for all connections to ensure consistent timestamp handling.
+	dsn, err = f.forceUTCTimezone(dsn, logger)
+	if err != nil {
+		return nil, err
+	}
+
 	return sql.Open(driverName, dsn)
+}
+
+// forceUTCTimezone parses the DSN and overrides the time_zone and loc parameters to UTC
+func (f *MySQLDBFactory) forceUTCTimezone(dsn string, logger *slog.Logger) (string, error) {
+	cfg, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse DSN for timezone override: %v", err)
+	}
+
+	if existingTz, exists := cfg.Params["time_zone"]; exists && existingTz != "'+00:00'" && existingTz != "'UTC'" {
+		if logger != nil {
+			logger.Warn("time_zone parameter is not supported, overriding to UTC",
+				"requested_timezone", existingTz,
+				"reason", "UTC is required for ADBC MySQL driver")
+		}
+	}
+
+	if existingLoc, exists := cfg.Params["loc"]; exists && existingLoc != "UTC" {
+		if logger != nil {
+			logger.Warn("loc parameter is not supported, overriding to UTC",
+				"requested_loc", existingLoc,
+				"reason", "UTC is required for ADBC MySQL driver")
+		}
+	}
+
+	if cfg.Params == nil {
+		cfg.Params = make(map[string]string)
+	}
+	cfg.Params["time_zone"] = "'+00:00'"
+	cfg.Params["loc"] = "UTC"
+
+	return cfg.FormatDSN(), nil
 }
 
 // buildMySQLDSN constructs a MySQL DSN from the provided options.
@@ -177,5 +216,4 @@ func (f *MySQLDBFactory) buildFromNativeDSN(baseURI, username, password string) 
 	return cfg.FormatDSN(), nil
 }
 
-// Ensure MySQLDBFactory implements sqlwrapper.DBFactory
 var _ sqlwrapper.DBFactory = (*MySQLDBFactory)(nil)
