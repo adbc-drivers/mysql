@@ -17,27 +17,10 @@
 [tags]
 sql-type-name = "TIMESTAMP"
 
-// part: setup_query
+// part: input
 
-CREATE TABLE test_timestamptz (
-    idx INT,
-    res TIMESTAMP(6),
-    res2 TIMESTAMP(6)
-);
-
-
-// part: bind
-
-{"idx": 3, "res": 1684158330000000, "res2": 1684158330000000}
-{"idx": 2, "res": 946684800000000, "res2": 946684800000000}
-{"idx": 1, "res": 1000000, "res2": 1000000}
-{"idx": 4, "res": 2147483647000000, "res2": 2147483647000000}
-{"idx": 0, "res": null, "res2": null}
-
-// part:expected
-
-{"res": null, "res2": null}
-{"res": 1000000, "res2": 1000000}
-{"res": 946684800000000, "res2": 946684800000000}
-{"res": 1684158330000000, "res2": 1684158330000000}
-{"res": 2147483647000000, "res2": 2147483647000000}
+{"idx": 0, "value": null, "value2": null}
+{"idx": 1, "value": 1, "value2": 1}
+{"idx": 2, "value": 946684800, "value2": 946684800}
+{"idx": 3, "value": 1684158330, "value2": 1684158330}
+{"idx": 4, "value": 2147483647, "value2": 2147483647}

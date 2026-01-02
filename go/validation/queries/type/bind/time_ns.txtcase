@@ -12,32 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// part: metadata
-
-[tags]
-sql-type-name = "TIMESTAMP"
-
 // part: setup_query
 
-CREATE TABLE test_timestamptz (
+CREATE TABLE test_time (
     idx INT,
-    res TIMESTAMP(6),
-    res2 TIMESTAMP(6)
+    res TIME(6)
 );
 
+// part: expected_schema
 
-// part: bind
+{
+    "format": "+s",
+    "children": [
+        {
+            "name": "res",
+            "format": "ttu",
+            "flags": ["nullable"]
+        }
+    ]
+}
 
-{"idx": 3, "res": 1684158330000000, "res2": 1684158330000000}
-{"idx": 2, "res": 946684800000000, "res2": 946684800000000}
-{"idx": 1, "res": 1000000, "res2": 1000000}
-{"idx": 4, "res": 2147483647000000, "res2": 2147483647000000}
-{"idx": 0, "res": null, "res2": null}
+// part: expected
 
-// part:expected
-
-{"res": null, "res2": null}
-{"res": 1000000, "res2": 1000000}
-{"res": 946684800000000, "res2": 946684800000000}
-{"res": 1684158330000000, "res2": 1684158330000000}
-{"res": 2147483647000000, "res2": 2147483647000000}
+{"res": 0}
+{"res": null}
+{"res": 49531123456}
+{"res": 45045500000}
+{"res": 86399999999}
