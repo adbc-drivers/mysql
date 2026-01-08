@@ -99,6 +99,7 @@ The driver also supports the MySQL DSN format (see [Go MySQL Driver documentatio
 
 To see documentation for previous versions of this driver, see the following:
 
+- [v0.2.0](./v0.2.0.md)
 - [v0.1.0](./v0.1.0.md)
 
 {{ footnotes|safe }}
