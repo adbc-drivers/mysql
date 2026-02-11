@@ -205,7 +205,7 @@ func (c *mysqlConnectionImpl) QuoteIdentifier(name string) string {
 }
 
 // GetPlaceholder implements BulkIngester
-func (c *mysqlConnectionImpl) GetPlaceholder(field *arrow.Field) string {
+func (c *mysqlConnectionImpl) GetPlaceholder(field *arrow.Field, index int) string {
 	return "?"
 }
 
@@ -220,11 +220,11 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 	}
 
 	// Validate MySQL-specific options
-	if options.MaxPayloadSize > 0 {
+	if options.MaxQuerySizeBytes > 0 {
 		return -1, c.ErrorHelper.InvalidArgument(
 			"MySQL driver does not support '%s'. "+
 				"Use '%s' instead to control the number of rows per INSERT statement.",
-			driverbase.OptionKeyIngestMaxPayloadSize,
+			driverbase.OptionKeyIngestMaxQuerySizeBytes,
 			driverbase.OptionKeyIngestBatchSize)
 	}
 
