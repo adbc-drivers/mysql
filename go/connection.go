@@ -28,6 +28,11 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
+const (
+	// Default num of rows per batch for batched INSERT
+	MySQLDefaultIngestBatchSize = 1000
+)
+
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) GetCurrentCatalog() (string, error) {
 	var database string
@@ -194,77 +199,44 @@ func (c *mysqlConnectionImpl) ListTableTypes(ctx context.Context) ([]string, err
 	}, nil
 }
 
-// ExecuteBulkIngest performs MySQL bulk ingest using INSERT statements
+// QuoteIdentifier implements BulkIngester
+func (c *mysqlConnectionImpl) QuoteIdentifier(name string) string {
+	return quoteIdentifier(name)
+}
+
+// GetPlaceholder implements BulkIngester
+func (c *mysqlConnectionImpl) GetPlaceholder(field *arrow.Field, index int) string {
+	return "?"
+}
+
+// Ensure mysqlConnectionImpl implements BulkIngester
+var _ sqlwrapper.BulkIngester = (*mysqlConnectionImpl)(nil)
+
+// ExecuteBulkIngest performs MySQL bulk ingest using batched INSERT statements.
 func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
-	if stream == nil {
-		return -1, c.ErrorHelper.InvalidArgument("stream cannot be nil")
-	}
-
-	var totalRowsInserted int64
-
-	// Get schema from stream and create table if needed
 	schema := stream.Schema()
 	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
 		return -1, c.ErrorHelper.WrapIO(err, "failed to create table")
 	}
 
-	// Build INSERT statement (once for all batches)
-	var placeholders []string
-	for range int(schema.NumFields()) {
-		placeholders = append(placeholders, "?")
+	// Validate MySQL-specific options
+	if options.MaxQuerySizeBytes > 0 {
+		return -1, c.ErrorHelper.InvalidArgument(
+			"MySQL driver does not support '%s'. "+
+				"Use '%s' instead to control the number of rows per INSERT statement.",
+			driverbase.OptionKeyIngestMaxQuerySizeBytes,
+			driverbase.OptionKeyIngestBatchSize)
 	}
 
-	insertSQL := fmt.Sprintf("INSERT INTO %s VALUES (%s)",
-		quoteIdentifier(options.TableName),
-		strings.Join(placeholders, ", "))
-
-	// Prepare the statement (once for all batches)
-	stmt, err := conn.PrepareContext(ctx, insertSQL)
-	if err != nil {
-		return -1, c.ErrorHelper.WrapIO(err, "failed to prepare insert statement")
-	}
-	defer func() {
-		err = errors.Join(err, stmt.Close())
-	}()
-
-	params := make([]any, len(schema.Fields()))
-
-	// Process each record batch in the stream
-	for stream.Next() {
-		record := stream.RecordBatch()
-
-		// Insert each row
-		rowsInBatch := int(record.NumRows())
-		for rowIdx := range rowsInBatch {
-			for colIdx := range int(record.NumCols()) {
-				arr := record.Column(colIdx)
-				field := schema.Field(colIdx)
-
-				// Use type converter to get Go value
-				value, err := c.TypeConverter.ConvertArrowToGo(arr, rowIdx, &field)
-				if err != nil {
-					return -1, c.ErrorHelper.WrapIO(err, "failed to convert value at row %d, col %d", rowIdx, colIdx)
-				}
-				params[colIdx] = value
-			}
-
-			// Execute the insert
-			_, err := stmt.ExecContext(ctx, params...)
-			if err != nil {
-				return -1, c.ErrorHelper.WrapIO(err, "failed to execute insert")
-			}
-		}
-
-		// Track rows inserted in this batch
-		totalRowsInserted += int64(rowsInBatch)
+	// Set MySQL-specific default batch size if user hasn't overridden
+	if options.IngestBatchSize == 0 {
+		options.IngestBatchSize = MySQLDefaultIngestBatchSize
 	}
 
-	// Check for stream errors
-	if err := stream.Err(); err != nil {
-		return -1, c.ErrorHelper.WrapIO(err, "stream error")
-	}
-
-	return totalRowsInserted, nil
+	return sqlwrapper.ExecuteBatchedBulkIngest(
+		ctx, conn, options, stream,
+		c.TypeConverter, c, &c.Base().ErrorHelper,
+	)
 }
 
 // createTableIfNeeded creates the table based on the ingest mode
