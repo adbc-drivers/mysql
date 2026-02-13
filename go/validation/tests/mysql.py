@@ -36,7 +36,9 @@ class MySQLQuirks(model.DriverQuirks):
         statement_bulk_ingest_temporary=False,
         statement_execute_schema=True,
         statement_get_parameter_schema=False,
+        statement_prepare=True,
         statement_rows_affected=True,
+        statement_rows_affected_ddl=True,
         current_catalog="db",  # MySQL treats databases as catalogs (also JDBC behavior)
         current_schema="",  # getSchemas() returns empty - no schema concept (also JDBC behavior)
         supported_xdbc_fields=[],
