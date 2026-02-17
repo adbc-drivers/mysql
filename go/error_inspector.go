@@ -104,8 +104,12 @@ func (m MySQLErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 		}
 	}
 
-	return adbc.Error{
+	adbcErr := adbc.Error{
 		Code: status,
 		Msg:  err.Error(),
 	}
+	if mysqlErr != nil {
+		adbcErr.SqlState = mysqlErr.SQLState
+	}
+	return adbcErr
 }

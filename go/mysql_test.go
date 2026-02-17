@@ -229,12 +229,11 @@ func (q *MySQLQuirks) SampleTableSchemaMetadata(tblName string, dt arrow.DataTyp
 
 func (q *MySQLQuirks) Alloc() memory.Allocator      { return q.mem }
 func (q *MySQLQuirks) BindParameter(idx int) string { return "?" }
+func (q *MySQLQuirks) QuoteTableName(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
 
-// SupportsBulkIngest returns false because MySQL doesn't support "NULLS LAST" syntax
-// used in the ADBC validation bulk ingest tests.
-// TODO: enable this once the validation framework is fixed.
-// Filed issue: https://github.com/adbc-drivers/driverbase-go/issues/69
-func (q *MySQLQuirks) SupportsBulkIngest(string) bool              { return false }
+func (q *MySQLQuirks) SupportsBulkIngest(string) bool              { return true }
 func (q *MySQLQuirks) SupportsConcurrentStatements() bool          { return false }
 func (q *MySQLQuirks) SupportsCurrentCatalogSchema() bool          { return true }
 func (q *MySQLQuirks) SupportsExecuteSchema() bool                 { return true }
