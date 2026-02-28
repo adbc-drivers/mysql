@@ -704,7 +704,7 @@ func (s *MySQLTestSuite) TestBulkIngestManyColumns() {
 	// 1000 (default batch size) * 100 columns = 100,000 placeholders > 65,535 limit
 	stmt, err := s.cnxn.NewStatement()
 	s.Require().NoError(err)
-	defer s.NoError(stmt.Close())
+	defer func() { s.NoError(stmt.Close()) }()
 
 	s.Require().NoError(stmt.SetOption(adbc.OptionKeyIngestTargetTable, tableName))
 	s.Require().NoError(stmt.Bind(s.ctx, batch))
