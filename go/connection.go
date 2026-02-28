@@ -31,6 +31,8 @@ import (
 const (
 	// Default num of rows per batch for batched INSERT
 	MySQLDefaultIngestBatchSize = 1000
+	// MySQL's maximum number of placeholders in a prepared statement
+	MySQLMaxPlaceholders = 65535
 )
 
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
@@ -228,9 +230,14 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 			driverbase.OptionKeyIngestBatchSize)
 	}
 
-	// Set MySQL-specific default batch size if user hasn't overridden
+	// Set MySQL-specific default batch size if user hasn't overridden,
+	// capping to stay within MySQL's 65,535 placeholder limit.
+	numCols := len(schema.Fields())
+	maxBatchSize := MySQLMaxPlaceholders / numCols
 	if options.IngestBatchSize == 0 {
-		options.IngestBatchSize = MySQLDefaultIngestBatchSize
+		options.IngestBatchSize = min(MySQLDefaultIngestBatchSize, maxBatchSize)
+	} else if options.IngestBatchSize > maxBatchSize {
+		options.IngestBatchSize = maxBatchSize
 	}
 
 	return sqlwrapper.ExecuteBatchedBulkIngest(
