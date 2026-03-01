@@ -669,6 +669,63 @@ func (s *MySQLTestSuite) TearDownSuite() {
 	s.mem.AssertSize(s.T(), 0)
 }
 
+func (s *MySQLTestSuite) TestBulkIngestManyColumns() {
+	const numCols = 100
+	const numRows = 5
+	tableName := "bulk_ingest_wide"
+
+	// Drop the table if it exists
+	s.NoError(s.stmt.SetSqlQuery("DROP TABLE IF EXISTS `" + tableName + "`"))
+	_, err := s.stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+
+	// Build a schema with 100 int64 columns
+	fields := make([]arrow.Field, numCols)
+	for i := range numCols {
+		fields[i] = arrow.Field{
+			Name: fmt.Sprintf("col_%d", i), Type: arrow.PrimitiveTypes.Int64, Nullable: true,
+		}
+	}
+	schema := arrow.NewSchema(fields, nil)
+
+	// Build a record batch with a few rows
+	batchbldr := array.NewRecordBuilder(s.mem, schema)
+	defer batchbldr.Release()
+	for col := range numCols {
+		bldr := batchbldr.Field(col).(*array.Int64Builder)
+		for row := range numRows {
+			bldr.Append(int64(col*numRows + row))
+		}
+	}
+	batch := batchbldr.NewRecordBatch()
+	defer batch.Release()
+
+	// Ingest — this would fail before the fix because
+	// 1000 (default batch size) * 100 columns = 100,000 placeholders > 65,535 limit
+	stmt, err := s.cnxn.NewStatement()
+	s.Require().NoError(err)
+	defer func() { s.NoError(stmt.Close()) }()
+
+	s.Require().NoError(stmt.SetOption(adbc.OptionKeyIngestTargetTable, tableName))
+	s.Require().NoError(stmt.Bind(s.ctx, batch))
+
+	affected, err := stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+	if affected != -1 {
+		s.EqualValues(numRows, affected)
+	}
+
+	// Verify the data was ingested correctly
+	s.Require().NoError(stmt.SetSqlQuery("SELECT COUNT(*) FROM `" + tableName + "`"))
+	rdr, _, err := stmt.ExecuteQuery(s.ctx)
+	s.Require().NoError(err)
+	defer rdr.Release()
+
+	s.Require().True(rdr.Next())
+	count := rdr.RecordBatch().Column(0).(*array.Int64).Value(0)
+	s.EqualValues(numRows, count)
+}
+
 func TestMySQLTypeTests(t *testing.T) {
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn == "" {
