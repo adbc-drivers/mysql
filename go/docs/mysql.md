@@ -1,5 +1,5 @@
 ---
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -99,6 +99,7 @@ The driver also supports the MySQL DSN format (see [Go MySQL Driver documentatio
 
 To see documentation for previous versions of this driver, see the following:
 
+- [v0.3.0](./v0.3.0.md)
 - [v0.2.0](./v0.2.0.md)
 - [v0.1.0](./v0.1.0.md)
 

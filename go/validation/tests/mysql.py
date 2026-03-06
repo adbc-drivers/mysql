@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
 from pathlib import Path
 
 from adbc_drivers_validation import model, quirks
@@ -27,9 +28,11 @@ class MySQLQuirks(model.DriverQuirks):
     features = model.DriverFeatures(
         connection_get_table_schema=True,
         connection_transactions=False,
+        get_objects=True,
         get_objects_constraints_foreign=False,
         get_objects_constraints_primary=False,
         get_objects_constraints_unique=False,
+        statement_bind=True,
         statement_bulk_ingest=True,
         statement_bulk_ingest_catalog=False,
         statement_bulk_ingest_schema=False,
@@ -79,4 +82,9 @@ class MySQLQuirks(model.DriverQuirks):
         return quirks.split_statement(statement)
 
 
-QUIRKS = [MySQLQuirks()]
+@functools.cache
+def get_quirks(version: str) -> model.DriverQuirks:
+    if version == "9.4":
+        return MySQLQuirks()
+    else:
+        raise ValueError(f"unsupported MySQL version: {version}")

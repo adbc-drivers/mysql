@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import adbc_drivers_validation.tests.query
 from adbc_drivers_validation.tests.query import (
     TestQuery,  # noqa: F401
-    generate_tests,
 )
 
 from . import mysql
 
 
 def pytest_generate_tests(metafunc) -> None:
-    return generate_tests(mysql.QUIRKS, metafunc)
+    quirks = [mysql.get_quirks(metafunc.config.getoption("vendor_version"))]
+    return adbc_drivers_validation.tests.query.generate_tests(quirks, metafunc)

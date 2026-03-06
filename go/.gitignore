@@ -16,4 +16,5 @@
 .pixi
 *.egg-info
 
+generated/
 validation-report.xml
