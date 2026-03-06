@@ -36,12 +36,13 @@ class MySQLQuirks(model.DriverQuirks):
         statement_bulk_ingest=True,
         statement_bulk_ingest_catalog=False,
         statement_bulk_ingest_schema=False,
-        statement_bulk_ingest_temporary=False,
+        statement_bulk_ingest_temporary=True,
         statement_execute_schema=True,
         statement_get_parameter_schema=False,
         statement_prepare=True,
         statement_rows_affected=True,
         statement_rows_affected_ddl=True,
+        quirk_bulk_ingest_temporary_shares_namespace=True,
         current_catalog="db",  # MySQL treats databases as catalogs (also JDBC behavior)
         current_schema="",  # getSchemas() returns empty - no schema concept (also JDBC behavior)
         supported_xdbc_fields=[],
@@ -80,6 +81,9 @@ class MySQLQuirks(model.DriverQuirks):
 
     def split_statement(self, statement: str) -> list[str]:
         return quirks.split_statement(statement)
+
+    def qualify_temp_table(self, _cursor, name: str) -> str:
+        return name
 
 
 @functools.cache
