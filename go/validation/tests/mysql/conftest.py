@@ -15,12 +15,14 @@
 import os
 
 import pytest
+from tests import mysql
 
 
 def pytest_generate_tests(metafunc) -> None:
+    quirks = mysql.get_quirks(metafunc.config.getoption("vendor_version"))
     metafunc.parametrize(
         "driver",
-        [pytest.param("mysql:", id="mysql")],
+        [f"{quirks.name}:{quirks.short_version}"],
         scope="module",
         indirect=["driver"],
     )

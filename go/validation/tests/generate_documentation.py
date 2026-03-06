@@ -27,9 +27,10 @@ if __name__ == "__main__":
     template = Path(__file__).parent.parent.parent / "docs/mysql.md"
     template = template.resolve()
 
+    reports = [report.resolve() for report in Path(".").glob("validation-report*.xml")]
     generate_documentation.generate(
-        mysql.QUIRKS,
-        Path("validation-report.xml").resolve(),
+        mysql.get_quirks,
+        reports,
         template,
         args.output.resolve(),
     )

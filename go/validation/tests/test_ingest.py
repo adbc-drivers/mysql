@@ -18,7 +18,8 @@ from . import mysql
 
 
 def pytest_generate_tests(metafunc) -> None:
-    return adbc_drivers_validation.tests.ingest.generate_tests(mysql.QUIRKS, metafunc)
+    quirks = [mysql.get_quirks(metafunc.config.getoption("vendor_version"))]
+    return adbc_drivers_validation.tests.ingest.generate_tests(quirks, metafunc)
 
 
 class TestIngest(adbc_drivers_validation.tests.ingest.TestIngest):
