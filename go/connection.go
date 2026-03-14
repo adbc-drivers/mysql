@@ -19,14 +19,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"sync/atomic"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
 	sqlwrapper "github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	gomysql "github.com/go-sql-driver/mysql"
 )
+
+var loadReaderCounter atomic.Uint64
 
 const (
 	// Default num of rows per batch for batched INSERT
@@ -214,11 +219,15 @@ func (c *mysqlConnectionImpl) GetPlaceholder(field *arrow.Field, index int) stri
 // Ensure mysqlConnectionImpl implements BulkIngester
 var _ sqlwrapper.BulkIngester = (*mysqlConnectionImpl)(nil)
 
-// ExecuteBulkIngest performs MySQL bulk ingest using batched INSERT statements.
+// ExecuteBulkIngest performs MySQL bulk ingest using LOAD DATA LOCAL INFILE with a fallback to batched INSERTs.
 func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	schema := stream.Schema()
 	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
 		return -1, c.ErrorHelper.WrapIO(err, "failed to create table")
+	}
+
+	if c.isLoadDataEnabled(ctx, conn) {
+		return c.executeLoadDataIngest(ctx, conn, options, stream)
 	}
 
 	// Validate MySQL-specific options
@@ -244,6 +253,73 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 		ctx, conn, options, stream,
 		c.TypeConverter, c, &c.Base().ErrorHelper,
 	)
+}
+
+// isLoadDataEnabled checks if LOAD DATA LOCAL INFILE is enabled on the server.
+func (c *mysqlConnectionImpl) isLoadDataEnabled(ctx context.Context, conn *sqlwrapper.LoggingConn) bool {
+	var localInfile int
+	err := conn.QueryRowContext(ctx, "SELECT @@local_infile").Scan(&localInfile)
+	return err == nil && localInfile == 1
+}
+
+// executeLoadDataIngest performs bulk ingestion using the LOAD DATA LOCAL INFILE command.
+func (c *mysqlConnectionImpl) executeLoadDataIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (int64, error) {
+	r, w := io.Pipe()
+	readerId := loadReaderCounter.Add(1)
+	readerName := fmt.Sprintf("adbc_ingest_%s_%d", options.TableName, readerId)
+
+	gomysql.RegisterReaderHandler(readerName, func() io.Reader {
+		return r
+	})
+	defer gomysql.DeregisterReaderHandler(readerName)
+	batchSize := options.IngestBatchSize
+	if batchSize <= 0 {
+		batchSize = 10000 // Default batch size for streaming chunks
+	}
+
+	it, err := sqlwrapper.NewRowBufferIterator(stream, batchSize, c.TypeConverter)
+	if err != nil {
+		return -1, c.ErrorHelper.WrapIO(err, "failed to create row buffer iterator")
+	}
+
+	numCols := len(stream.Schema().Fields())
+	go func() {
+		config := CSVConfig{
+			FieldDelimiter:  '\t',
+			LineTerminator:  '\n',
+			NullValue:       "\\N",
+			EscapeBackslash: true,
+		}
+		err := arrowToCSV(ctx, w, it, numCols, config)
+		if err != nil {
+			_ = w.CloseWithError(err)
+		} else {
+			_ = w.Close()
+		}
+	}()
+
+	var colNames []string
+	for _, field := range stream.Schema().Fields() {
+		colNames = append(colNames, quoteIdentifier(field.Name))
+	}
+	colsList := strings.Join(colNames, ", ")
+
+	query := fmt.Sprintf(
+		"LOAD DATA LOCAL INFILE 'Reader::%s' INTO TABLE %s CHARACTER SET utf8mb4 FIELDS TERMINATED BY '\\t' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' (%s)",
+		readerName, c.QuoteIdentifier(options.TableName), colsList,
+	)
+
+	res, err := conn.ExecContext(ctx, query)
+	if err != nil {
+		return -1, c.ErrorHelper.WrapIO(err, "failed to execute LOAD DATA statement")
+	}
+
+	rowCount, err := res.RowsAffected()
+	if err != nil {
+		return -1, c.ErrorHelper.WrapIO(err, "failed to get rows affected")
+	}
+
+	return rowCount, nil
 }
 
 // createTableIfNeeded creates the table based on the ingest mode
