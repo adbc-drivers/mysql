@@ -156,6 +156,7 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		ColumnName      string
 		ColumnComment   sql.NullString
 		DataType        string
+		ColumnType      string
 		IsNullable      string
 		ColumnDefault   sql.NullString
 	}
@@ -170,6 +171,7 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 			c.COLUMN_NAME,
 			c.COLUMN_COMMENT,
 			c.DATA_TYPE,
+			c.COLUMN_TYPE,
 			c.IS_NULLABLE,
 			c.COLUMN_DEFAULT
 		FROM INFORMATION_SCHEMA.TABLES t
@@ -208,7 +210,7 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		if err := rows.Scan(
 			&tc.TableName, &tc.TableType,
 			&tc.OrdinalPosition, &tc.ColumnName, &tc.ColumnComment,
-			&tc.DataType, &tc.IsNullable, &tc.ColumnDefault,
+			&tc.DataType, &tc.ColumnType, &tc.IsNullable, &tc.ColumnDefault,
 		); err != nil {
 			return nil, c.ErrorHelper.WrapIO(err, "failed to scan table with columns")
 		}
@@ -225,6 +227,12 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		// Process column data
 		var radix sql.NullInt16
 		var nullable sql.NullInt16
+
+		// Build the full type name including UNSIGNED if applicable
+		xdbcTypeName := tc.DataType
+		if strings.Contains(strings.ToUpper(tc.ColumnType), "UNSIGNED") {
+			xdbcTypeName = tc.DataType + " unsigned"
+		}
 
 		// Set numeric precision radix (MySQL doesn't store this directly)
 		dataType := strings.ToUpper(tc.DataType)
@@ -266,7 +274,7 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 			ColumnName:       tc.ColumnName,
 			OrdinalPosition:  &tc.OrdinalPosition,
 			Remarks:          driverbase.NullStringToPtr(tc.ColumnComment),
-			XdbcTypeName:     &tc.DataType,
+			XdbcTypeName:     &xdbcTypeName,
 			XdbcNumPrecRadix: driverbase.NullInt16ToPtr(radix),
 			XdbcNullable:     driverbase.NullInt16ToPtr(nullable),
 			XdbcIsNullable:   &tc.IsNullable,

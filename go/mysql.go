@@ -38,10 +38,26 @@ type mySQLTypeConverter struct {
 	sqlwrapper.DefaultTypeConverter
 }
 
+// normalizeUnsignedTypeName converts "UNSIGNED INT" -> "INT UNSIGNED" format
+// The go-sql-driver/mysql returns "UNSIGNED X" but the default type converter expects "X UNSIGNED"
+func normalizeUnsignedTypeName(typeName string) string {
+	if strings.HasPrefix(typeName, "UNSIGNED ") {
+		return strings.TrimPrefix(typeName, "UNSIGNED ") + " UNSIGNED"
+	}
+	return typeName
+}
+
 // ConvertRawColumnType implements TypeConverter with MySQL-specific enhancements
 func (m *mySQLTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType) (arrow.DataType, bool, arrow.Metadata, error) {
 	typeName := strings.ToUpper(colType.DatabaseTypeName)
 	nullable := colType.Nullable
+
+	// Normalize "UNSIGNED X" to "X UNSIGNED" for the default type converter
+	// Only update DatabaseTypeName when reordering is needed, to preserve original casing in metadata
+	typeName = normalizeUnsignedTypeName(typeName)
+	if typeName != strings.ToUpper(colType.DatabaseTypeName) {
+		colType.DatabaseTypeName = typeName
+	}
 
 	switch typeName {
 	case "BIT":

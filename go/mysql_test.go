@@ -358,7 +358,11 @@ func (s *MySQLTests) TestSelect() {
 			point_col POINT,
 			polygon_col POLYGON,
 			geometry_col GEOMETRY,
-			bit_col BIT(8)
+			bit_col BIT(8),
+			utinyint_col TINYINT UNSIGNED,
+			usmallint_col SMALLINT UNSIGNED,
+			uint_col INT UNSIGNED,
+			ubigint_col BIGINT UNSIGNED
 		)
 	`))
 	_, err := s.stmt.ExecuteUpdate(s.ctx)
@@ -372,7 +376,8 @@ func (s *MySQLTests) TestSelect() {
 			ST_GeomFromText('POINT(1 2)'),
 			ST_GeomFromText('POLYGON((0 0, 0 3, 3 3, 3 0, 0 0))'),
 			ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
-			b'10101010'
+			b'10101010',
+			200, 60000, 3000000000, 10000000000000000000
 		)
 	`))
 	_, err = s.stmt.ExecuteUpdate(s.ctx)
@@ -594,6 +599,70 @@ func (s *MySQLTests) TestSelect() {
 				},
 			}, nil),
 			expected: `[{"bitvalue": "qg=="}]`,
+		},
+		{
+			name:  "unsigned_tinyint",
+			query: "SELECT utinyint_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Uint8,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "TINYINT UNSIGNED",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 200}]`,
+		},
+		{
+			name:  "unsigned_smallint",
+			query: "SELECT usmallint_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Uint16,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "SMALLINT UNSIGNED",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 60000}]`,
+		},
+		{
+			name:  "unsigned_int",
+			query: "SELECT uint_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Uint32,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "INT UNSIGNED",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 3000000000}]`,
+		},
+		{
+			name:  "unsigned_bigint",
+			query: "SELECT ubigint_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Uint64,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "BIGINT UNSIGNED",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 10000000000000000000}]`,
 		},
 	} {
 		s.Run(testCase.name, func() {
