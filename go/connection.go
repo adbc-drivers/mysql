@@ -170,9 +170,13 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 		}
 
 		// Use DATA_TYPE but append UNSIGNED if COLUMN_TYPE indicates it
+		// Only check integer types to avoid false positives with enum/set value lists
 		dbTypeName := col.DataType
-		if strings.Contains(strings.ToUpper(col.ColumnType), "UNSIGNED") {
-			dbTypeName = col.DataType + " UNSIGNED"
+		switch strings.ToUpper(col.DataType) {
+		case "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "BIGINT":
+			if strings.Contains(strings.ToUpper(col.ColumnType), "UNSIGNED") {
+				dbTypeName = col.DataType + " UNSIGNED"
+			}
 		}
 
 		colType := sqlwrapper.ColumnType{

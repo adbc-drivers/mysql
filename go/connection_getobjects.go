@@ -229,9 +229,13 @@ func (c *mysqlConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		var nullable sql.NullInt16
 
 		// Build the full type name including UNSIGNED if applicable
+		// Only check integer types to avoid false positives with enum/set value lists
 		xdbcTypeName := tc.DataType
-		if strings.Contains(strings.ToUpper(tc.ColumnType), "UNSIGNED") {
-			xdbcTypeName = tc.DataType + " unsigned"
+		switch strings.ToUpper(tc.DataType) {
+		case "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "BIGINT":
+			if strings.Contains(strings.ToUpper(tc.ColumnType), "UNSIGNED") {
+				xdbcTypeName = tc.DataType + " UNSIGNED"
+			}
 		}
 
 		// Set numeric precision radix (MySQL doesn't store this directly)
