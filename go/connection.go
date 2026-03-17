@@ -85,6 +85,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 		OrdinalPosition        int32
 		ColumnName             string
 		DataType               string
+		ColumnType             string
 		IsNullable             string
 		CharacterMaximumLength sql.NullInt64
 		NumericPrecision       sql.NullInt64
@@ -95,6 +96,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 		ORDINAL_POSITION,
 		COLUMN_NAME,
 		DATA_TYPE,
+		COLUMN_TYPE,
 		IS_NULLABLE,
 		CHARACTER_MAXIMUM_LENGTH,
 		NUMERIC_PRECISION,
@@ -132,6 +134,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 			&col.OrdinalPosition,
 			&col.ColumnName,
 			&col.DataType,
+			&col.ColumnType,
 			&col.IsNullable,
 			&col.CharacterMaximumLength,
 			&col.NumericPrecision,
@@ -166,9 +169,19 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 			scale = &col.NumericScale.Int64
 		}
 
+		// Use DATA_TYPE but append UNSIGNED if COLUMN_TYPE indicates it
+		// Only check integer types to avoid false positives with enum/set value lists
+		dbTypeName := col.DataType
+		switch strings.ToUpper(col.DataType) {
+		case "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "BIGINT":
+			if strings.Contains(strings.ToUpper(col.ColumnType), "UNSIGNED") {
+				dbTypeName = col.DataType + " UNSIGNED"
+			}
+		}
+
 		colType := sqlwrapper.ColumnType{
 			Name:             col.ColumnName,
-			DatabaseTypeName: col.DataType,
+			DatabaseTypeName: dbTypeName,
 			Nullable:         col.IsNullable == "YES",
 			Length:           length,
 			Precision:        precision,
@@ -328,6 +341,14 @@ func (c *mysqlConnectionImpl) arrowToMySQLType(arrowType arrow.DataType, nullabl
 		mysqlType = "INT"
 	case *arrow.Int64Type:
 		mysqlType = "BIGINT"
+	case *arrow.Uint8Type:
+		mysqlType = "TINYINT UNSIGNED"
+	case *arrow.Uint16Type:
+		mysqlType = "SMALLINT UNSIGNED"
+	case *arrow.Uint32Type:
+		mysqlType = "INT UNSIGNED"
+	case *arrow.Uint64Type:
+		mysqlType = "BIGINT UNSIGNED"
 	case *arrow.Float32Type:
 		mysqlType = "FLOAT"
 	case *arrow.Float64Type:
