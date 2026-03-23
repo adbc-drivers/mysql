@@ -18,7 +18,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"path/filepath"
 	"strings"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
@@ -26,37 +25,26 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
+// GetObjects implements adbc.Connection by running a single query on the
+// session connection (c.Conn) so that session-scoped objects like temporary
+// tables are visible in the results.
+//
+// The query joins SCHEMATA, a synthetic schema subquery, TABLES, and COLUMNS.
+// Levels beyond the requested depth are disabled with AND 1=0 in the join
+// condition. All filters (catalog, schema, table, column, table type) are
+// applied in SQL.
 func (c *mysqlConnectionImpl) GetObjects(ctx context.Context, depth adbc.ObjectDepth, catalog *string, dbSchema *string, tableName *string, columnName *string, tableType []string) (array.RecordReader, error) {
-	// MySQL has no real schema concept; we model it as a single empty-string schema.
-	// If the caller filters on a schema that doesn't match "", return catalogs only.
-	includeSchemas := true
-	if dbSchema != nil {
-		matches, err := filepath.Match(*dbSchema, "")
-		if err != nil {
-			return nil, c.ErrorHelper.WrapInvalidArgument(err, "invalid schema filter pattern")
-		}
-		if !matches {
-			includeSchemas = false
-		}
-	}
-
-	// Determine effective depth: if schema filter doesn't match, cap at catalogs.
-	effectiveDepth := depth
-	if !includeSchemas && effectiveDepth != adbc.ObjectDepthCatalogs {
-		effectiveDepth = adbc.ObjectDepthCatalogs
-	}
-
-	// Build a single query: SCHEMATA LEFT JOIN TABLES LEFT JOIN COLUMNS.
-	// Deeper levels are disabled with AND 1=0 in the join condition.
-	includeTables := effectiveDepth == adbc.ObjectDepthTables || effectiveDepth == adbc.ObjectDepthColumns
-	includeColumns := effectiveDepth == adbc.ObjectDepthColumns
+	includeSchemas := depth != adbc.ObjectDepthCatalogs
+	includeTables := depth == adbc.ObjectDepthTables || depth == adbc.ObjectDepthColumns
+	includeColumns := depth == adbc.ObjectDepthColumns
 
 	var queryBuilder strings.Builder
 	args := []any{}
 
 	queryBuilder.WriteString(`
 		SELECT
-			s.SCHEMA_NAME,
+			s.SCHEMA_NAME AS CATALOG_NAME,
+			sch.DB_SCHEMA_NAME,
 			t.TABLE_NAME,
 			t.TABLE_TYPE,
 			c.ORDINAL_POSITION,
@@ -66,9 +54,27 @@ func (c *mysqlConnectionImpl) GetObjects(ctx context.Context, depth adbc.ObjectD
 			c.COLUMN_TYPE,
 			c.IS_NULLABLE,
 			c.COLUMN_DEFAULT
-		FROM INFORMATION_SCHEMA.SCHEMATA s
+		FROM INFORMATION_SCHEMA.SCHEMATA s`)
+
+	// MySQL has no real schema concept. We model it as a single empty-string
+	// schema via a LEFT JOIN with a synthetic row. The schema filter is
+	// applied via LIKE on this column. AND 1=0 disables the join when
+	// depth is catalogs-only, producing NULL for DB_SCHEMA_NAME.
+	queryBuilder.WriteString(`
+		LEFT JOIN (SELECT '' AS DB_SCHEMA_NAME) sch
+			ON 1=1`)
+
+	if !includeSchemas {
+		queryBuilder.WriteString(` AND 1=0`)
+	} else if dbSchema != nil {
+		queryBuilder.WriteString(` AND sch.DB_SCHEMA_NAME LIKE ?`)
+		args = append(args, *dbSchema)
+	}
+
+	queryBuilder.WriteString(`
 		LEFT JOIN INFORMATION_SCHEMA.TABLES t
-			ON s.SCHEMA_NAME = t.TABLE_SCHEMA`)
+			ON s.SCHEMA_NAME = t.TABLE_SCHEMA
+			AND sch.DB_SCHEMA_NAME IS NOT NULL`)
 
 	if !includeTables {
 		queryBuilder.WriteString(` AND 1=0`)
@@ -117,11 +123,10 @@ func (c *mysqlConnectionImpl) GetObjects(ctx context.Context, depth adbc.ObjectD
 	var currentInfo *driverbase.GetObjectsInfo
 	var currentTable *driverbase.TableInfo
 
-	includeDbSchemas := effectiveDepth != adbc.ObjectDepthCatalogs
-
 	for rows.Next() {
 		var (
-			schema          string
+			catalogName     string
+			schemaName      sql.NullString
 			tblName         sql.NullString
 			tblType         sql.NullString
 			ordinalPosition sql.NullInt32
@@ -134,7 +139,7 @@ func (c *mysqlConnectionImpl) GetObjects(ctx context.Context, depth adbc.ObjectD
 		)
 
 		if err := rows.Scan(
-			&schema, &tblName, &tblType,
+			&catalogName, &schemaName, &tblName, &tblType,
 			&ordinalPosition, &colName, &colComment,
 			&dataType, &colType, &isNullable, &colDefault,
 		); err != nil {
@@ -142,10 +147,16 @@ func (c *mysqlConnectionImpl) GetObjects(ctx context.Context, depth adbc.ObjectD
 		}
 
 		// New catalog?
-		if currentInfo == nil || *currentInfo.CatalogName != schema {
-			info := driverbase.GetObjectsInfo{CatalogName: driverbase.Nullable(schema)}
-			if includeDbSchemas {
-				info.CatalogDbSchemas = []driverbase.DBSchemaInfo{{DbSchemaName: driverbase.Nullable("")}}
+		if currentInfo == nil || *currentInfo.CatalogName != catalogName {
+			info := driverbase.GetObjectsInfo{CatalogName: driverbase.Nullable(catalogName)}
+			if schemaName.Valid {
+				schemaInfo := driverbase.DBSchemaInfo{DbSchemaName: driverbase.Nullable(schemaName.String)}
+				if includeTables {
+					schemaInfo.DbSchemaTables = []driverbase.TableInfo{}
+				}
+				info.CatalogDbSchemas = []driverbase.DBSchemaInfo{schemaInfo}
+			} else if includeSchemas {
+				info.CatalogDbSchemas = []driverbase.DBSchemaInfo{}
 			}
 			infos = append(infos, info)
 			currentInfo = &infos[len(infos)-1]
@@ -159,10 +170,14 @@ func (c *mysqlConnectionImpl) GetObjects(ctx context.Context, depth adbc.ObjectD
 		// New table?
 		tables := &currentInfo.CatalogDbSchemas[0].DbSchemaTables
 		if currentTable == nil || currentTable.TableName != tblName.String {
-			*tables = append(*tables, driverbase.TableInfo{
+			tableInfo := driverbase.TableInfo{
 				TableName: tblName.String,
 				TableType: tblType.String,
-			})
+			}
+			if includeColumns {
+				tableInfo.TableColumns = []driverbase.ColumnInfo{}
+			}
+			*tables = append(*tables, tableInfo)
 			currentTable = &(*tables)[len(*tables)-1]
 		}
 
