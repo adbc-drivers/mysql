@@ -260,7 +260,7 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 	}
 }
 
-// mysqlConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
+// mysqlConnectionImpl extends sqlwrapper connection with MySQL-specific functionality
 type mysqlConnectionImpl struct {
 	*sqlwrapper.ConnectionImplBase // Embed sqlwrapper connection for all standard functionality
 
@@ -269,9 +269,6 @@ type mysqlConnectionImpl struct {
 
 // implements BulkIngester interface
 var _ sqlwrapper.BulkIngester = (*mysqlConnectionImpl)(nil)
-
-// implements DbObjectsEnumerator interface
-var _ driverbase.DbObjectsEnumerator = (*mysqlConnectionImpl)(nil)
 
 // implements CurrentNameSpacer interface
 var _ driverbase.CurrentNamespacer = (*mysqlConnectionImpl)(nil)

@@ -38,7 +38,7 @@ const (
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) GetCurrentCatalog() (string, error) {
 	var database string
-	err := c.Db.QueryRowContext(context.Background(), "SELECT DATABASE()").Scan(&database)
+	err := c.Conn.QueryRowContext(context.Background(), "SELECT DATABASE()").Scan(&database)
 	if err != nil {
 		return "", c.ErrorHelper.WrapIO(err, "failed to get current database")
 	}
@@ -55,7 +55,7 @@ func (c *mysqlConnectionImpl) GetCurrentDbSchema() (string, error) {
 
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) SetCurrentCatalog(catalog string) error {
-	_, err := c.Db.ExecContext(context.Background(), "USE "+quoteIdentifier(catalog))
+	_, err := c.Conn.ExecContext(context.Background(), "USE "+quoteIdentifier(catalog))
 	return err
 }
 
