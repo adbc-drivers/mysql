@@ -34,6 +34,10 @@ import (
 // condition. All filters (catalog, schema, table, column, table type) are
 // applied in SQL.
 func (c *mysqlConnectionImpl) GetObjects(ctx context.Context, depth adbc.ObjectDepth, catalog *string, dbSchema *string, tableName *string, columnName *string, tableType []string) (array.RecordReader, error) {
+	if err := c.ClearPending(); err != nil {
+		return nil, err
+	}
+
 	includeSchemas := depth != adbc.ObjectDepthCatalogs
 	includeTables := depth == adbc.ObjectDepthTables || depth == adbc.ObjectDepthColumns
 	includeColumns := depth == adbc.ObjectDepthColumns

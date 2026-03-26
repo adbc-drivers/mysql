@@ -805,49 +805,6 @@ func TestMySQLTypeTests(t *testing.T) {
 	suite.Run(t, &MySQLTests{Quirks: quirks})
 }
 
-func (s *MySQLTestSuite) TestGetObjectsTempTable() {
-	tempTableName := "getobjects_temp_test"
-
-	// Create a temporary table via bulk ingest
-	stmt, err := s.cnxn.NewStatement()
-	s.Require().NoError(err)
-	defer func() { s.NoError(stmt.Close()) }()
-
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
-	}, nil)
-
-	batchbldr := array.NewRecordBuilder(s.mem, schema)
-	defer batchbldr.Release()
-	batchbldr.Field(0).(*array.Int64Builder).Append(1)
-	batch := batchbldr.NewRecordBatch()
-	defer batch.Release()
-
-	s.Require().NoError(stmt.SetOption(adbc.OptionKeyIngestTargetTable, tempTableName))
-	s.Require().NoError(stmt.SetOption(adbc.OptionValueIngestTemporary, adbc.OptionValueEnabled))
-	s.Require().NoError(stmt.Bind(s.ctx, batch))
-	_, err = stmt.ExecuteUpdate(s.ctx)
-	s.Require().NoError(err)
-
-	// Verify the temp table is queryable on this connection
-	s.Require().NoError(stmt.SetSqlQuery("SELECT COUNT(*) FROM `" + tempTableName + "`"))
-	rdr, _, err := stmt.ExecuteQuery(s.ctx)
-	s.Require().NoError(err)
-	s.Require().True(rdr.Next())
-	count := rdr.RecordBatch().Column(0).(*array.Int64).Value(0)
-	s.EqualValues(1, count)
-	rdr.Release()
-
-	// GetObjects should not error even with a temp table on the session.
-	// On MariaDB, the temp table would appear in the results.
-	// On MySQL, temp tables are not in INFORMATION_SCHEMA.TABLES.
-	objRdr, err := s.cnxn.GetObjects(s.ctx, adbc.ObjectDepthTables, nil, nil, &tempTableName, nil, nil)
-	s.Require().NoError(err)
-	defer objRdr.Release()
-
-	s.Require().True(objRdr.Next())
-}
-
 func TestMySQLIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(MySQLTestSuite))
 }

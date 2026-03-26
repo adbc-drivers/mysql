@@ -37,6 +37,9 @@ const (
 
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) GetCurrentCatalog() (string, error) {
+	if err := c.ClearPending(); err != nil {
+		return "", err
+	}
 	var database string
 	err := c.Conn.QueryRowContext(context.Background(), "SELECT DATABASE()").Scan(&database)
 	if err != nil {
@@ -55,6 +58,9 @@ func (c *mysqlConnectionImpl) GetCurrentDbSchema() (string, error) {
 
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *mysqlConnectionImpl) SetCurrentCatalog(catalog string) error {
+	if err := c.ClearPending(); err != nil {
+		return err
+	}
 	_, err := c.Conn.ExecContext(context.Background(), "USE "+quoteIdentifier(catalog))
 	return err
 }
@@ -68,6 +74,9 @@ func (c *mysqlConnectionImpl) SetCurrentDbSchema(schema string) error {
 }
 
 func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes []adbc.InfoCode) error {
+	if err := c.ClearPending(); err != nil {
+		return err
+	}
 	if c.version == "" {
 		var version, comment string
 		if err := c.Conn.QueryRowContext(ctx, "SELECT @@version, @@version_comment").Scan(&version, &comment); err != nil {
@@ -80,6 +89,9 @@ func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes [
 
 // GetTableSchema returns the Arrow schema for a MySQL table
 func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *string, dbSchema *string, tableName string) (schema *arrow.Schema, err error) {
+	if err := c.ClearPending(); err != nil {
+		return nil, err
+	}
 	// Struct to capture MySQL column information
 	type tableColumn struct {
 		OrdinalPosition        int32
