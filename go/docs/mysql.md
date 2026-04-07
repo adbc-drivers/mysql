@@ -94,7 +94,7 @@ The driver also accepts the [Go MySQL Driver DSN format](https://github.com/go-s
 [username[:password]@][protocol[(address)]]/dbname[?param1=value1&...&paramN=valueN]
 ```
 
-**Examples:**
+Examples:
 
 - `user:pass@tcp(localhost:3306)/mydb`
 - `user@tcp(127.0.0.1:3306)/mydb`
