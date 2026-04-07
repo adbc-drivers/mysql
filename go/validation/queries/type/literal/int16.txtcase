@@ -12,28 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// part: metadata
-
-[setup]
-drop = "test_uint64"
-
-// part: setup_query
-
-CREATE TABLE test_uint64 (
-    idx INTEGER,
-    res BIGINT UNSIGNED
-);
-
-INSERT INTO test_uint64 (idx, res) VALUES (1, 18446744073709551615);
-INSERT INTO test_uint64 (idx, res) VALUES (2, 0);
-INSERT INTO test_uint64 (idx, res) VALUES (3, 9223372036854775808);
-INSERT INTO test_uint64 (idx, res) VALUES (4, 1);
-INSERT INTO test_uint64 (idx, res) VALUES (5, 9223372036854775807);
-INSERT INTO test_uint64 (idx, res) VALUES (6, NULL);
-
 // part: query
 
-SELECT res FROM test_uint64 ORDER BY idx
+SELECT 16384 AS res
 
 // part: expected_schema
 
@@ -42,7 +23,7 @@ SELECT res FROM test_uint64 ORDER BY idx
     "children": [
         {
             "name": "res",
-            "format": "L",
+            "format": "l",
             "flags": ["nullable"]
         }
     ]
@@ -50,9 +31,4 @@ SELECT res FROM test_uint64 ORDER BY idx
 
 // part: expected
 
-{"res": 18446744073709551615}
-{"res": 0}
-{"res": 9223372036854775808}
-{"res": 1}
-{"res": 9223372036854775807}
-{"res": null}
+{"res": 16384}
