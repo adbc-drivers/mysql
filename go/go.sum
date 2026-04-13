@@ -10,8 +10,8 @@ github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260322182445-802140779
 github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260322182445-8021407792c4/go.mod h1:UtbO6c68JtrPqFN6JBWEXmwAsbN0Dy0Fu7V/Po3waLQ=
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
 github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
-github.com/apache/arrow-adbc/go/adbc v1.10.0 h1:WlUswkFtj5QpUa/sPWWgMneQhUTVnpEvSnQoJNSx9t0=
-github.com/apache/arrow-adbc/go/adbc v1.10.0/go.mod h1:wdXFaLnh8z8OEEcbqFOEXi5i/VK10cIICA4/g0L8o2I=
+github.com/apache/arrow-adbc/go/adbc v1.11.0 h1:zcSLtV8CQ27chkYWZmySvd4+pkkDtWhRtHz0LpglRAU=
+github.com/apache/arrow-adbc/go/adbc v1.11.0/go.mod h1:7BIIq4XHzttQVG293LRurIhF/UH+IWlgGRR6hUqPLG8=
 github.com/apache/arrow-go/v18 v18.5.2 h1:3uoHjoaEie5eVsxx/Bt64hKwZx4STb+beAkqKOlq/lY=
 github.com/apache/arrow-go/v18 v18.5.2/go.mod h1:yNoizNTT4peTciJ7V01d2EgOkE1d0fQ1vZcFOsVtFsw=
 github.com/apache/thrift v0.22.0 h1:r7mTJdj51TMDe6RtcmNdQxgn9XcyfGDOzegMDRg47uc=
