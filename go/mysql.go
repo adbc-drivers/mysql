@@ -290,6 +290,10 @@ func (f *mysqlConnectionFactory) CreateConnection(
 	}, nil
 }
 
+// infoSqlIdentifierQuoteChar is the Flight SQL GetSqlInfo code for
+// SQL_IDENTIFIER_QUOTE_CHAR, in the [500, 1000) XDBC range reserved by ADBC.
+const infoSqlIdentifierQuoteChar = 504
+
 // NewDriver constructs the ADBC Driver for "mysql".
 func NewDriver(alloc memory.Allocator) adbc.Driver {
 	vendorName := "MySQL"
@@ -301,9 +305,10 @@ func NewDriver(alloc memory.Allocator) adbc.Driver {
 		WithConnectionFactory(&mysqlConnectionFactory{}).
 		WithErrorInspector(MySQLErrorInspector{})
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
-		adbc.InfoDriverName:      "ADBC Driver Foundry Driver for MySQL",
-		adbc.InfoVendorSql:       true,
-		adbc.InfoVendorSubstrait: false,
+		adbc.InfoDriverName:             "ADBC Driver Foundry Driver for MySQL",
+		adbc.InfoVendorSql:              true,
+		adbc.InfoVendorSubstrait:        false,
+		adbc.InfoCode(infoSqlIdentifierQuoteChar): "`",
 	})
 
 	return driver
