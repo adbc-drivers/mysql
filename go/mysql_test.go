@@ -267,6 +267,8 @@ func (q *MySQLQuirks) GetMetadata(code adbc.InfoCode) interface{} {
 		return true
 	case adbc.InfoVendorSubstrait:
 		return false
+	case adbc.InfoCode(504): // SQL_IDENTIFIER_QUOTE_CHAR
+		return "`"
 	}
 	return nil
 }
