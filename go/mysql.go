@@ -305,9 +305,9 @@ func NewDriver(alloc memory.Allocator) adbc.Driver {
 		WithConnectionFactory(&mysqlConnectionFactory{}).
 		WithErrorInspector(MySQLErrorInspector{})
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
-		adbc.InfoDriverName:             "ADBC Driver Foundry Driver for MySQL",
-		adbc.InfoVendorSql:              true,
-		adbc.InfoVendorSubstrait:        false,
+		adbc.InfoDriverName:                       "ADBC Driver Foundry Driver for MySQL",
+		adbc.InfoVendorSql:                        true,
+		adbc.InfoVendorSubstrait:                  false,
 		adbc.InfoCode(infoSqlIdentifierQuoteChar): "`",
 	})
 
