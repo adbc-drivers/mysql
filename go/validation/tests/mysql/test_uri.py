@@ -19,7 +19,6 @@ import pytest
 from adbc_drivers_validation import model
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_userpass_uri(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -40,7 +39,6 @@ def test_userpass_uri(
             cursor.execute("SELECT 1")
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_userpass_options(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -62,7 +60,6 @@ def test_userpass_options(
             cursor.execute("SELECT 1")
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_userpass_options_override_uri(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -86,7 +83,6 @@ def test_userpass_options_override_uri(
             pass
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 @pytest.mark.parametrize(
     "tls_param, expect_encrypted",
     [
@@ -131,7 +127,6 @@ def test_ssl_modes(
                 assert not cipher, "Ssl_cipher is not empty, connection IS encrypted"
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_uri_default_port(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -153,7 +148,6 @@ def test_uri_default_port(
             assert cursor.fetchone()[0] == 1
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_uri_missing_host_error(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -176,7 +170,6 @@ def test_uri_missing_host_error(
             pass
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_charset_selection_in_uri(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -210,7 +203,6 @@ def test_charset_selection_in_uri(
             assert result[1] == "utf8mb4"
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_missing_uri_raises_error(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -227,7 +219,6 @@ def test_missing_uri_raises_error(
             pass
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_invalid_uri_format(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -244,7 +235,6 @@ def test_invalid_uri_format(
             pass
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_unix_socket_parentheses(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -268,7 +258,6 @@ def test_unix_socket_parentheses(
 # --- DSN tests ---
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_basic_dsn_connection(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -285,7 +274,6 @@ def test_basic_dsn_connection(
             assert result[0] == 1
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_minimal_dsn_with_creds(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -313,7 +301,6 @@ def test_minimal_dsn_with_creds(
             assert result[0] is None
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_plain_host_with_creds_options(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -334,7 +321,6 @@ def test_plain_host_with_creds_options(
             assert cursor.fetchone()[0] == 1
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_native_dsn_options_override(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -358,7 +344,6 @@ def test_native_dsn_options_override(
             pass
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_unix_socket_dsn(
     driver: model.DriverQuirks,
     driver_path: str,
