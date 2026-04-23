@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/adbc-drivers/driverbase-go/validation"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -43,12 +44,12 @@ type MySQLQuirks struct {
 	mem *memory.CheckedAllocator
 }
 
-func (q *MySQLQuirks) SetupDriver(t *testing.T) adbc.Driver {
+func (q *MySQLQuirks) SetupDriver(t *testing.T) driverbase.DriverWithContext {
 	q.mem = memory.NewCheckedAllocator(memory.DefaultAllocator)
 	return mysql.NewDriver(q.mem)
 }
 
-func (q *MySQLQuirks) TearDownDriver(t *testing.T, _ adbc.Driver) {
+func (q *MySQLQuirks) TearDownDriver(t *testing.T, _ driverbase.DriverWithContext) {
 	q.mem.AssertSize(t, 0)
 }
 
@@ -177,20 +178,21 @@ func (q *MySQLQuirks) CreateSampleTable(tableName string, r arrow.RecordBatch) e
 	return nil
 }
 
-func (q *MySQLQuirks) DropTable(cnxn adbc.Connection, tblName string) error {
-	stmt, err := cnxn.NewStatement()
+func (q *MySQLQuirks) DropTable(cnxn adbc.ConnectionWithContext, tblName string) error {
+	ctx := context.Background()
+	stmt, err := cnxn.NewStatement(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		err = errors.Join(err, stmt.Close())
+		err = errors.Join(err, stmt.Close(ctx))
 	}()
 
-	if err = stmt.SetSqlQuery("DROP TABLE IF EXISTS " + tblName); err != nil {
+	if err = stmt.SetSqlQuery(ctx, "DROP TABLE IF EXISTS "+tblName); err != nil {
 		return err
 	}
 
-	_, err = stmt.ExecuteUpdate(context.Background())
+	_, err = stmt.ExecuteUpdate(ctx)
 	return err
 }
 
@@ -295,9 +297,15 @@ func (s *MySQLStatementTests) TestSqlIngestErrors() {
 // This is the primary test that validates ADBC specification compliance
 func TestValidation(t *testing.T) {
 	withQuirks(t, func(q *MySQLQuirks) {
-		suite.Run(t, &validation.DatabaseTests{Quirks: q})
-		suite.Run(t, &validation.ConnectionTests{Quirks: q})
-		suite.Run(t, &validation.StatementTests{Quirks: q})
+		t.Run("Database", func(t *testing.T) {
+			suite.Run(t, &validation.DatabaseTests{Quirks: q})
+		})
+		t.Run("Connection", func(t *testing.T) {
+			suite.Run(t, &validation.ConnectionTests{Quirks: q})
+		})
+		t.Run("Statement", func(t *testing.T) {
+			suite.Run(t, &validation.StatementTests{Quirks: q})
+		})
 	})
 }
 
@@ -309,30 +317,30 @@ type MySQLTests struct {
 	Quirks *MySQLQuirks
 
 	ctx    context.Context
-	driver adbc.Driver
-	db     adbc.Database
-	cnxn   adbc.Connection
-	stmt   adbc.Statement
+	driver driverbase.DriverWithContext
+	db     adbc.DatabaseWithContext
+	cnxn   adbc.ConnectionWithContext
+	stmt   adbc.StatementWithContext
 }
 
 func (s *MySQLTests) SetupTest() {
 	var err error
 	s.ctx = context.Background()
 	s.driver = s.Quirks.SetupDriver(s.T())
-	s.db, err = s.driver.NewDatabase(s.Quirks.DatabaseOptions())
+	s.db, err = s.driver.NewDatabaseWithContext(s.ctx, s.Quirks.DatabaseOptions())
 	s.NoError(err)
 	s.cnxn, err = s.db.Open(s.ctx)
 	s.NoError(err)
-	s.stmt, err = s.cnxn.NewStatement()
+	s.stmt, err = s.cnxn.NewStatement(s.ctx)
 	s.NoError(err)
 }
 
 func (s *MySQLTests) TearDownTest() {
-	s.NoError(s.stmt.Close())
-	s.NoError(s.cnxn.Close())
+	s.NoError(s.stmt.Close(s.ctx))
+	s.NoError(s.cnxn.Close(s.ctx))
 	s.Quirks.TearDownDriver(s.T(), s.driver)
 	s.cnxn = nil
-	s.NoError(s.db.Close())
+	s.NoError(s.db.Close(s.ctx))
 	s.db = nil
 	s.driver = nil
 }
@@ -346,7 +354,7 @@ type selectCase struct {
 
 func (s *MySQLTests) TestSelect() {
 	// Create test table with various MySQL types including spatial
-	s.NoError(s.stmt.SetSqlQuery(`
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, `
 		CREATE TEMPORARY TABLE test_types (
 			bool_col TINYINT(1),
 			tinyint_col TINYINT,
@@ -371,7 +379,7 @@ func (s *MySQLTests) TestSelect() {
 	s.NoError(err)
 
 	// Insert test data including spatial data
-	s.NoError(s.stmt.SetSqlQuery(`
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, `
 		INSERT INTO test_types VALUES (
 			1, 42, 12345, 9876543210, 3.25, 6.75, 'hello world',
 			'{"key": "value", "number": 42}', 'active',
@@ -668,7 +676,7 @@ func (s *MySQLTests) TestSelect() {
 		},
 	} {
 		s.Run(testCase.name, func() {
-			s.NoError(s.stmt.SetSqlQuery(testCase.query))
+			s.NoError(s.stmt.SetSqlQuery(s.ctx, testCase.query))
 
 			rdr, rows, err := s.stmt.ExecuteQuery(s.ctx)
 			s.NoError(err)
@@ -698,10 +706,10 @@ type MySQLTestSuite struct {
 	dsn    string
 	mem    *memory.CheckedAllocator
 	ctx    context.Context
-	driver adbc.Driver
-	db     adbc.Database
-	cnxn   adbc.Connection
-	stmt   adbc.Statement
+	driver driverbase.DriverWithContext
+	db     adbc.DatabaseWithContext
+	cnxn   adbc.ConnectionWithContext
+	stmt   adbc.StatementWithContext
 }
 
 func (s *MySQLTestSuite) SetupSuite() {
@@ -715,7 +723,7 @@ func (s *MySQLTestSuite) SetupSuite() {
 	s.mem = memory.NewCheckedAllocator(memory.DefaultAllocator)
 
 	s.driver = mysql.NewDriver(s.mem)
-	s.db, err = s.driver.NewDatabase(map[string]string{
+	s.db, err = s.driver.NewDatabaseWithContext(s.ctx, map[string]string{
 		adbc.OptionKeyURI: s.dsn,
 	})
 	s.NoError(err)
@@ -723,19 +731,19 @@ func (s *MySQLTestSuite) SetupSuite() {
 	s.cnxn, err = s.db.Open(s.ctx)
 	s.NoError(err)
 
-	s.stmt, err = s.cnxn.NewStatement()
+	s.stmt, err = s.cnxn.NewStatement(s.ctx)
 	s.NoError(err)
 }
 
 func (s *MySQLTestSuite) TearDownSuite() {
 	if s.stmt != nil {
-		s.NoError(s.stmt.Close())
+		s.NoError(s.stmt.Close(s.ctx))
 	}
 	if s.cnxn != nil {
-		s.NoError(s.cnxn.Close())
+		s.NoError(s.cnxn.Close(s.ctx))
 	}
 	if s.db != nil {
-		s.NoError(s.db.Close())
+		s.NoError(s.db.Close(s.ctx))
 	}
 	s.mem.AssertSize(s.T(), 0)
 }
@@ -746,7 +754,7 @@ func (s *MySQLTestSuite) TestBulkIngestManyColumns() {
 	tableName := "bulk_ingest_wide"
 
 	// Drop the table if it exists
-	s.NoError(s.stmt.SetSqlQuery("DROP TABLE IF EXISTS `" + tableName + "`"))
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, "DROP TABLE IF EXISTS `"+tableName+"`"))
 	_, err := s.stmt.ExecuteUpdate(s.ctx)
 	s.Require().NoError(err)
 
@@ -773,11 +781,11 @@ func (s *MySQLTestSuite) TestBulkIngestManyColumns() {
 
 	// Ingest — this would fail before the fix because
 	// 1000 (default batch size) * 100 columns = 100,000 placeholders > 65,535 limit
-	stmt, err := s.cnxn.NewStatement()
+	stmt, err := s.cnxn.NewStatement(s.ctx)
 	s.Require().NoError(err)
-	defer func() { s.NoError(stmt.Close()) }()
+	defer func() { s.NoError(stmt.Close(s.ctx)) }()
 
-	s.Require().NoError(stmt.SetOption(adbc.OptionKeyIngestTargetTable, tableName))
+	s.Require().NoError(stmt.SetOption(s.ctx, adbc.OptionKeyIngestTargetTable, tableName))
 	s.Require().NoError(stmt.Bind(s.ctx, batch))
 
 	affected, err := stmt.ExecuteUpdate(s.ctx)
@@ -787,7 +795,7 @@ func (s *MySQLTestSuite) TestBulkIngestManyColumns() {
 	}
 
 	// Verify the data was ingested correctly
-	s.Require().NoError(stmt.SetSqlQuery("SELECT COUNT(*) FROM `" + tableName + "`"))
+	s.Require().NoError(stmt.SetSqlQuery(s.ctx, "SELECT COUNT(*) FROM `"+tableName+"`"))
 	rdr, _, err := stmt.ExecuteQuery(s.ctx)
 	s.Require().NoError(err)
 	defer rdr.Release()
