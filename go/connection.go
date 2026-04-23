@@ -36,12 +36,12 @@ const (
 )
 
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
-func (c *mysqlConnectionImpl) GetCurrentCatalog() (string, error) {
+func (c *mysqlConnectionImpl) GetCurrentCatalog(ctx context.Context) (string, error) {
 	if err := c.ClearPending(); err != nil {
 		return "", err
 	}
 	var database string
-	err := c.Conn.QueryRowContext(context.Background(), "SELECT DATABASE()").Scan(&database)
+	err := c.Conn.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&database)
 	if err != nil {
 		return "", c.ErrorHelper.WrapIO(err, "failed to get current database")
 	}
@@ -52,21 +52,21 @@ func (c *mysqlConnectionImpl) GetCurrentCatalog() (string, error) {
 }
 
 // GetCurrentDbSchema implements driverbase.CurrentNamespacer.
-func (c *mysqlConnectionImpl) GetCurrentDbSchema() (string, error) {
+func (c *mysqlConnectionImpl) GetCurrentDbSchema(_ context.Context) (string, error) {
 	return "", nil
 }
 
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
-func (c *mysqlConnectionImpl) SetCurrentCatalog(catalog string) error {
+func (c *mysqlConnectionImpl) SetCurrentCatalog(ctx context.Context, catalog string) error {
 	if err := c.ClearPending(); err != nil {
 		return err
 	}
-	_, err := c.Conn.ExecContext(context.Background(), "USE "+quoteIdentifier(catalog))
+	_, err := c.Conn.ExecContext(ctx, "USE "+quoteIdentifier(catalog))
 	return err
 }
 
 // SetCurrentDbSchema implements driverbase.CurrentNamespacer.
-func (c *mysqlConnectionImpl) SetCurrentDbSchema(schema string) error {
+func (c *mysqlConnectionImpl) SetCurrentDbSchema(_ context.Context, schema string) error {
 	if schema != "" {
 		return c.ErrorHelper.InvalidArgument("cannot set schema in MySQL: schemas are not supported")
 	}
@@ -123,7 +123,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 		args = []any{*catalog, tableName}
 	} else {
 		// Use current database
-		currentDB, err := c.GetCurrentCatalog()
+		currentDB, err := c.GetCurrentCatalog(ctx)
 		if err != nil {
 			return nil, err
 		}

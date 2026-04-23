@@ -13,3 +13,6 @@
 # limitations under the License.
 
 .github/workflows/dev_issues.yaml
+go/pkg/driver.go
+go/pkg/utils.c
+go/pkg/utils.h

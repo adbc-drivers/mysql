@@ -295,7 +295,7 @@ func (f *mysqlConnectionFactory) CreateConnection(
 const infoSqlIdentifierQuoteChar = 504
 
 // NewDriver constructs the ADBC Driver for "mysql".
-func NewDriver(alloc memory.Allocator) adbc.Driver {
+func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 	vendorName := "MySQL"
 	typeConverter := &mySQLTypeConverter{
 		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
