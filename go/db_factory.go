@@ -49,7 +49,12 @@ func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 		return nil, err
 	}
 
-	return sql.Open(driverName, dsn)
+	db, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxIdleConns(0)
+	return db, nil
 }
 
 // forceUTCTimezone parses the DSN and overrides the time_zone and loc parameters to UTC
