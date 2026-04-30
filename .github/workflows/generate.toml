@@ -15,9 +15,6 @@
 driver = "mysql"
 private = false
 
-[lang]
-go = true
-
 [[lang.go.validation.configs]]
 service_name = "test-service"
 vendor_version = "mysql"
