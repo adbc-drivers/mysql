@@ -16,12 +16,12 @@
 ---
 
 {{ cross_reference|safe }}
-# MySQL Driver {{ version }}
+# MySQL/MariaDB Driver {{ version }}
 
 {{ heading|safe }}
 
-This driver provides access to [MySQL][mysql]{target="_blank"}, a free and
-open-source relational database management system.
+This driver provides access to [MySQL][mysql] and [MariaDB][mariadb], free and
+open-source relational database management systems.
 
 ## Installation
 
@@ -116,10 +116,12 @@ Examples:
 
 To see documentation for previous versions of this driver, see the following:
 
+- [v0.3.1](./v0.3.1.md)
 - [v0.3.0](./v0.3.0.md)
 - [v0.2.0](./v0.2.0.md)
 - [v0.1.0](./v0.1.0.md)
 
 {{ footnotes|safe }}
 
+[mariadb]: https://mariadb.org/
 [mysql]: https://www.mysql.com/

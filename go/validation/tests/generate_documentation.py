@@ -13,11 +13,26 @@
 # limitations under the License.
 
 import argparse
+import functools
 from pathlib import Path
 
 import adbc_drivers_validation.generate_documentation as generate_documentation
+import adbc_drivers_validation.model as model
 
 from . import mysql
+
+
+@functools.cache
+def get_quirks(version: str, *, vendor: str) -> model.DriverQuirks:
+    if vendor == "mysql" and version == "9.4":
+        return mysql.MySQLQuirks()
+    elif vendor == "mariadb" and version == "12.2":
+        return mysql.MariaDBQuirks()
+    elif vendor not in ("mysql", "mariadb"):
+        raise ValueError(f"unsupported vendor: {vendor}")
+    else:
+        raise ValueError(f"unsupported {vendor} version: {version}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -29,7 +44,12 @@ if __name__ == "__main__":
 
     reports = [report.resolve() for report in Path(".").glob("validation-report*.xml")]
     generate_documentation.generate(
-        mysql.get_quirks,
+        "mysql",
+        get_quirks,
+        [
+            ("mysql", "MySQL"),
+            ("mariadb", "MariaDB"),
+        ],
         reports,
         template,
         args.output.resolve(),

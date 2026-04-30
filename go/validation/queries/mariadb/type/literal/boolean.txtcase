@@ -1,4 +1,4 @@
-// Copyright (c) 2025 ADBC Drivers Contributors
+// Copyright (c) 2026 ADBC Drivers Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,33 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// part: metadata
-
-[tags]
-sql-type-name = "TIME"
-
 // part: expected_schema
-
 {
     "format": "+s",
     "children": [
         {
-            "name": "idx",
-            "format": "l",
+            "name": "res",
+            "format": "i",
             "flags": ["nullable"]
         },
         {
-            "name": "value",
-            "format": "ttu",
+            "name": "res2",
+            "format": "i",
             "flags": ["nullable"]
         }
     ]
 }
-
-// part: expected
-
-{"idx": 0, "value": 0}
-{"idx": 1, "value": 3661000000}
-{"idx": 2, "value": 43200000000}
-{"idx": 3, "value": 49531123456}
-{"idx": 4, "value": 86399999999}

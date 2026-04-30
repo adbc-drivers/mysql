@@ -20,6 +20,10 @@ from tests import mysql
 
 def pytest_generate_tests(metafunc) -> None:
     quirks = mysql.get_quirks(metafunc.config.getoption("vendor_version"))
+    if quirks.name != "mysql":
+        pytest.skip()
+        return
+
     metafunc.parametrize(
         "driver",
         [f"{quirks.name}:{quirks.short_version}"],
