@@ -57,7 +57,7 @@ class MySQLQuirks(model.DriverQuirks):
 
     @property
     def queries_paths(self) -> tuple[Path]:
-        return (Path(__file__).parent.parent / "queries",)
+        return (Path(__file__).parent.parent / "queries/mysql",)
 
     def bind_parameter(self, index: int) -> str:
         return "?"
@@ -75,6 +75,11 @@ class MySQLQuirks(model.DriverQuirks):
             and table_name.lower() in error_str
         )
 
+    def query_override(self, context: str, default: str) -> str:
+        if context == "TestStatement.sample_table":
+            return "CREATE TABLE `sample_table` (id INT, value TEXT)"
+        return super().query_override(context, default)
+
     def quote_one_identifier(self, identifier: str) -> str:
         identifier = identifier.replace("`", "``")
         return f"`{identifier}`"
@@ -86,9 +91,31 @@ class MySQLQuirks(model.DriverQuirks):
         return name
 
 
+class MariaDBQuirks(MySQLQuirks):
+    name = "mariadb"
+    vendor_version = "12.2.2-MariaDB-ubu2404 (mariadb.org binary distribution)"
+    short_version = "12.2"
+
+    setup = model.DriverSetup(
+        database={
+            "uri": model.FromEnv("MARIADB_DSN"),
+        },
+        connection={},
+        statement={},
+    )
+
+    @property
+    def queries_paths(self) -> tuple[Path]:
+        return super().queries_paths + (
+            Path(__file__).parent.parent / "queries/mariadb",
+        )
+
+
 @functools.cache
-def get_quirks(version: str) -> model.DriverQuirks:
-    if version == "9.4":
+def get_quirks(test_config: str) -> model.DriverQuirks:
+    if test_config == "mysql":
         return MySQLQuirks()
+    elif test_config == "mariadb":
+        return MariaDBQuirks()
     else:
-        raise ValueError(f"unsupported MySQL version: {version}")
+        raise ValueError(f"unsupported test config: {test_config}")

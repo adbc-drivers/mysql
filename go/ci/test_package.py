@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-driver = "mysql"
-private = false
+import adbc_driver_manager.dbapi
+import pytest
 
-[[lang.go.validation.configs]]
-service_name = "test-service"
-vendor_version = "mysql"
 
-[[lang.go.validation.configs]]
-service_name = "mariadb"
-vendor_version = "mariadb"
+def test_package() -> None:
+    uri = "my:password@tcp(localhost:3306)/db"
+    with pytest.raises(
+        adbc_driver_manager.dbapi.OperationalError, match="failed to ping database"
+    ):
+        with adbc_driver_manager.dbapi.connect(driver="mysql", uri=uri):
+            pass

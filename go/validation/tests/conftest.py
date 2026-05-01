@@ -31,13 +31,11 @@ from . import mysql
 
 def pytest_addoption(parser):
     adbc_drivers_validation.tests.conftest.pytest_addoption(parser)
-    parser.addoption("--vendor-version", action="store", default="9.4")
+    parser.addoption("--vendor-version", action="store", default="mysql")
 
 
 @pytest.fixture(scope="session")
 def driver(request, pytestconfig) -> adbc_drivers_validation.model.DriverQuirks:
-    driver = request.param
-    assert driver.startswith("mysql:")
     return mysql.get_quirks(pytestconfig.getoption("vendor_version"))
 
 
@@ -49,6 +47,5 @@ def driver_path(driver: adbc_drivers_validation.model.DriverQuirks) -> str:
     }.get(sys.platform, "so")
     # Assume shared library is in the repo root
     return str(
-        Path(__file__).parent.parent.parent
-        / f"build/libadbc_driver_{driver.name}.{ext}"
+        Path(__file__).parent.parent.parent / f"build/libadbc_driver_mysql.{ext}"
     )

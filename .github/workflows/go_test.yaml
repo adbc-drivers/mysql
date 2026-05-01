@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025-2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 # !!!! AUTO-GENERATED FILE.  DO NOT EDIT. !!!!
 # USE adbc-gen-workflow (see adbc-drivers/dev) TO UPDATE THIS FILE.
 
-# This is a common workflow for building & testing Go drivers:
+# This is a common workflow for building & testing drivers:
 #
 # - Build the driver
 # - Start dependencies
@@ -31,7 +31,6 @@ on:
     paths:
       - "go/**"
       - .github/workflows/go_test.yaml
-
   push:
     branches:
       - main
@@ -39,17 +38,17 @@ on:
       - "go/**"
       - .github/workflows/go_test.yaml
 
-  workflow_dispatch: {}
-
 
 concurrency:
-  # Must share concurrency group with release workflow since it also builds/tests
-  group: ${{ github.repository }}-${{ github.ref }}-ci
+  group: ${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 defaults:
   run:
     shell: bash
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -61,7 +60,7 @@ jobs:
         include:
           - { platform: linux, arch: amd64, runner: ubuntu-latest }
           - { platform: macos, arch: arm64, runner: macos-latest }
-          - { platform: win, arch: amd64, runner: windows-latest }
+          - { platform: windows, arch: amd64, runner: windows-latest }
     permissions:
       contents: read
     steps:
@@ -76,22 +75,36 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: 'recursive'
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: true
           cache-dependency-path: go/go.sum
           check-latest: true
           go-version-file: go/go.mod
 
       - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
 
       - name: Build
         working-directory: go
         run: |
+          if [[ -f ci/scripts/pre-build.sh ]]; then
+            echo "Loading pre-build"
+            ./ci/scripts/pre-build.sh test ${{ matrix.platform }} ${{ matrix.arch }}
+          fi
+
+          set -a
+          if [[ -f .env.build ]]; then
+            echo "Loading .env.build"
+            source .env.build
+          fi
+          set +a
+
           go build ./...
 
       - name: Start Test Dependencies
@@ -110,26 +123,23 @@ jobs:
           fi
 
       - name: Test
-        if: runner.os == 'Linux'
         working-directory: go
         run: |
           set -a
           if [[ -f .env ]]; then
             source .env
           fi
+          if [[ -f .env.${{ matrix.platform }} ]]; then
+            source .env.${{ matrix.platform }}
+          fi
           if [[ -f .env.ci ]]; then
             source .env.ci
           fi
           set +a
 
-          if [[ -n "${{ secrets.environment }}" ]]; then
-            echo "Loading secret environment variables"
-            eval "${{ secrets.environment }}"
-          fi
-
           if [[ -f ci/scripts/pre-test.sh ]]; then
             echo "Loading pre-test"
-            ./ci/scripts/pre-test.sh
+            ./ci/scripts/pre-test.sh ${{ matrix.platform }} ${{ matrix.arch }}
           fi
 
           go test -tags assert -v ./...
@@ -144,21 +154,16 @@ jobs:
         run: |
           go mod tidy --diff
 
-      - name: Test
-        if: runner.os != 'Linux'
-        working-directory: go
-        run: |
-          go test -tags assert -v ./...
-
   validate:
-    name: "Validate/${{ matrix.platform }}_${{ matrix.arch }}"
+    name: "Validate mysql ${{ matrix.vendor_version }}/${{ matrix.platform }}_${{ matrix.arch }}"
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
         include:
           # I think we only need to test one platform, but we can change that later
-          - { platform: linux, arch: amd64, runner: ubuntu-latest }
+          - { platform: linux, arch: amd64, runner: ubuntu-latest, service_name: "test-service", vendor_version: "mysql" }
+          - { platform: linux, arch: amd64, runner: ubuntu-latest, service_name: "mariadb", vendor_version: "mariadb" }
     permissions:
       contents: read
     steps:
@@ -173,18 +178,27 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: 'recursive'
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: true
           cache-dependency-path: go/go.sum
           check-latest: true
           go-version-file: go/go.mod
 
       - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
+
+      - name: Log in to ghcr.io
+        if: runner.os == 'Linux'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
       - name: Build Library
         working-directory: go
@@ -193,12 +207,15 @@ jobs:
             ./ci/scripts/pre-build.sh test ${{ matrix.platform }} ${{ matrix.arch }}
           fi
           set -a
-          if [[ -f .env.release ]]; then
+          if [[ -f .env.build ]]; then
+            echo "Loading .env.build"
+            source .env.build
+          fi
+          if [[ -f .env.test ]]; then
             source .env.test
           fi
           set +a
-          pixi run adbc-make build DEBUG=true VERBOSE=true DRIVER=mysql
-
+          pixi run adbc-make build DEBUG=true VERBOSE=true DRIVER=mysql IMPL_LANG=go
       - name: Start Test Dependencies
         # Can't use Docker on macOS AArch64 runners, and Windows containers
         # work but often the container doesn't support Windows
@@ -206,10 +223,10 @@ jobs:
         working-directory: go
         run: |
           if [[ -f compose.yaml ]]; then
-            if ! docker compose up --detach --wait test-service; then
+            if ! docker compose up --detach --wait ${{ matrix.service_name }}; then
               echo "Service failed to start"
               echo "Logs:"
-              docker compose logs test-service
+              docker compose logs ${{ matrix.service_name }}
               exit 1
             fi
           fi
@@ -222,27 +239,37 @@ jobs:
           if [[ -f .env ]]; then
             source .env
           fi
+          if [[ -f .env.${{ matrix.platform }} ]]; then
+            source .env.${{ matrix.platform }}
+          fi
           if [[ -f .env.ci ]]; then
             source .env.ci
           fi
           set +a
 
-          if [[ -n "${{ secrets.environment }}" ]]; then
-            echo "Loading secret environment variables"
-            eval "${{ secrets.environment }}"
-          fi
-
           if [[ -f ci/scripts/pre-test.sh ]]; then
             echo "Loading pre-test"
-            ./ci/scripts/pre-test.sh
+            ./ci/scripts/pre-test.sh ${{ matrix.platform }} ${{ matrix.arch }} ${{ matrix.service_name }}
           fi
 
           docker ps
-          pixi run validate
+          if [[ -n "${{ matrix.vendor_version }}" ]]; then
+            pixi run validate --vendor-version "${{ matrix.vendor_version }}"
+          else
+            pixi run validate
+          fi
 
           if [[ -f ci/scripts/post-test.sh ]]; then
             ./ci/scripts/post-test.sh
           fi
+
+          cp validation-report.xml validation-report-${{ matrix.vendor_version }}.xml
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: validation-report-${{ matrix.vendor_version }}
+          path: "go/validation-report-${{ matrix.vendor_version }}.xml"
+          retention-days: 7
 
       - name: Generate docs
         working-directory: go
@@ -253,7 +280,7 @@ jobs:
         with:
           name: docs
           path: "go/generated/mysql.md"
-          retention-days: 2
+          retention-days: 7
 
   build:
     name: "Build mysql/${{ matrix.platform }}_${{ matrix.arch }}"
@@ -276,16 +303,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: 'recursive'
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: true
           cache-dependency-path: go/go.sum
           check-latest: true
           go-version-file: go/go.mod
 
       - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
       - name: Install dev tools
@@ -295,8 +324,10 @@ jobs:
 
       - name: Log in to ghcr.io
         if: runner.os == 'Linux'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
       - name: Build Library
         working-directory: go
@@ -305,11 +336,15 @@ jobs:
             ./ci/scripts/pre-build.sh release ${{ matrix.platform }} ${{ matrix.arch }}
           fi
           set -a
+          if [[ -f .env.build ]]; then
+            echo "Loading .env.build"
+            source .env.build
+          fi
           if [[ -f .env.release ]]; then
             source .env.release
           fi
           set +a
-          pixi run adbc-make check CI=true VERBOSE=true DRIVER=mysql
+          pixi run adbc-make check CI=true VERBOSE=true DRIVER=mysql IMPL_LANG=go
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
@@ -320,7 +355,9 @@ jobs:
   package:
     name: "Generate Packages"
     runs-on: ubuntu-latest
-    needs: build
+    needs:
+      - build
+      - validate
     permissions:
       contents: read
 
@@ -329,15 +366,17 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: 'recursive'
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: true
           check-latest: true
           go-version: "stable"
 
       - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
@@ -348,18 +387,11 @@ jobs:
       - name: Install tools
         working-directory: go
         run: |
+          # XXX: Google has effectively abandoned go-licenses, and it broke
           # XXX: can't install go-licenses under go 1.25
+          # Use our fork instead
           # https://github.com/google/go-licenses/issues/312
-          git clone --depth=1 https://github.com/google/go-licenses
-          git config --global --add 'url.https://github.com/.insteadOf' ssh://git@github.com/
-          pushd go-licenses
-          go get -u
-          # Silent break: https://github.com/spf13/cobra/pull/2303
-          # Manually edit the go.mod to get around this for now
-          sed -i 's|github.com/spf13/pflag v1.0.8|github.com/spf13/pflag v1.0.7|g' go.mod
-          go mod tidy
-          go install .
-          popd
+          go install github.com/lidavidm/go-licenses@master
 
       - name: Generate packages
         working-directory: go
@@ -369,7 +401,7 @@ jobs:
           pixi run adbc-gen-package \
             --name mysql \
             --root $(pwd) \
-            --manifest-template manifest.toml \
+            --manifest-template $(pwd)/manifest.toml \
             ${{ (inputs.release && '--release') || '' }}\
             -o ~/packages \
             ~/drivers/drivers-*-*/
@@ -382,11 +414,94 @@ jobs:
           path: ~/packages
           retention-days: 7
 
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: "validation-report-*"
+          path: "~/validation-report"
+
+      - name: Generate combined docs
+        working-directory: go
+        run: |
+          ls -laR ~/validation-report
+          find ~/validation-report -type f -name '*.xml'
+          cp $(find ~/validation-report -type f -name '*.xml') .
+          ls *.xml
+          pixi run gendocs --output generated
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: docs-${{ matrix.vendor_version }}
+          path: "go/generated/mysql.md"
+          retention-days: 2
+
+  test-packages:
+    name: "Test Packages/${{ matrix.platform }}_${{ matrix.arch }}"
+    runs-on: ${{ matrix.runner }}
+    needs:
+      - package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux, arch: amd64, runner: ubuntu-latest }
+          - { platform: macos, arch: arm64, runner: macos-latest }
+          - { platform: windows, arch: amd64, runner: windows-latest }
+    steps:
+      # for now, install dbc from main
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          cache: true
+          go-version: 'stable'
+      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
+        with:
+          pixi-version: v0.63.2
+          run-install: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: "all-packages"
+          path: "~/packages"
+      - name: install package
+        # dbc uses the filename as the driver name
+        run: |
+          echo "Installing dbc"
+          git clone --depth 1 https://github.com/columnar-tech/dbc
+          cd dbc
+          go build ./cmd/dbc
+          echo "Installed dbc"
+          ls -laR ~/packages
+          driver_pkg=$(find ~/packages -name '*_${{ matrix.platform }}_${{ matrix.arch }}_*.tar.gz')
+          echo "Installing ${driver_pkg}"
+          ./dbc install --no-verify "${driver_pkg}"
+          echo "Installed ${driver_pkg}"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: 'recursive'
+      - name: load package
+        working-directory: go
+        run: |
+          if [[ -f ci/scripts/pre-build.sh ]]; then
+            echo "Loading pre-build"
+            ./ci/scripts/pre-build.sh test ${{ matrix.platform }} ${{ matrix.arch }}
+          fi
+          set -a
+          if [[ -f .env.build ]]; then
+            echo "Loading .env.build"
+            source .env.build
+          fi
+          if [[ -f .env.ci ]]; then
+            source .env.ci
+          fi
+          set +a
+          pixi exec -s adbc-driver-manager -s pyarrow -s pytest python -m pytest -vs ci/test_package.py
+
   release:
     name: "Release (Dry Run)"
     runs-on: ubuntu-latest
     needs:
       - package
+      - test-packages
       - validate
     permissions:
       contents: read
@@ -396,15 +511,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
-        with:
-          check-latest: true
-          go-version: "stable"
+          submodules: 'recursive'
 
       - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
