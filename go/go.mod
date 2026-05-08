@@ -23,7 +23,7 @@ require (
 	github.com/apache/arrow-adbc/go/adbc v1.11.0
 	github.com/apache/arrow-go/v18 v18.6.0
 	github.com/go-ext/variant v1.2.4
-	github.com/go-sql-driver/mysql v1.9.3
+	github.com/go-sql-driver/mysql v1.10.0
 	github.com/stretchr/testify v1.11.1
 )
 
