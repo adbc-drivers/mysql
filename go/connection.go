@@ -242,11 +242,8 @@ var _ sqlwrapper.BulkIngester = (*mysqlConnectionImpl)(nil)
 // ExecuteBulkIngest performs MySQL bulk ingest using batched INSERT statements.
 func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	schema := stream.Schema()
-	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
-		return -1, c.ErrorHelper.WrapIO(err, "failed to create table")
-	}
 
-	// Validate MySQL-specific options
+	// Validate MySQL-specific options before touching the database.
 	if options.MaxQuerySizeBytes > 0 {
 		return -1, c.ErrorHelper.InvalidArgument(
 			"MySQL driver does not support '%s'. "+
@@ -255,9 +252,24 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 			driverbase.OptionKeyIngestBatchSize)
 	}
 
+	// Guard against division by zero and schemas that exceed MySQL's 65,535
+	// placeholder limit before any database interaction.
+	numCols := len(schema.Fields())
+	if numCols == 0 {
+		return -1, c.ErrorHelper.InvalidArgument("bulk ingest schema must have at least one column")
+	}
+	if numCols > MySQLMaxPlaceholders {
+		return -1, c.ErrorHelper.InvalidArgument(
+			"bulk ingest schema has %d columns, exceeding the MySQL placeholder limit of %d",
+			numCols, MySQLMaxPlaceholders)
+	}
+
+	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
+		return -1, c.ErrorHelper.WrapIO(err, "failed to create table")
+	}
+
 	// Set MySQL-specific default batch size if user hasn't overridden,
 	// capping to stay within MySQL's 65,535 placeholder limit.
-	numCols := len(schema.Fields())
 	maxBatchSize := MySQLMaxPlaceholders / numCols
 	if options.IngestBatchSize == 0 {
 		options.IngestBatchSize = min(MySQLDefaultIngestBatchSize, maxBatchSize)
