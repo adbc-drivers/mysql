@@ -270,7 +270,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: docs
+          name: docs-${{ matrix.vendor_version }}
           path: "go/generated/mysql.md"
           retention-days: 7
 
@@ -336,8 +336,7 @@ jobs:
             source .env.release
           fi
           set +a
-          pixi run adbc-make check CI=true VERBOSE=true DRIVER=mysql IMPL_LANG=go
-
+          pixi run adbc-make check CI=true VERBOSE=true DRIVER=mysql IMPL_LANG=go  RELEASE=true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: drivers-${{ matrix.platform }}-${{ matrix.arch }}
@@ -394,7 +393,7 @@ jobs:
             --name mysql \
             --root $(pwd) \
             --manifest-template $(pwd)/manifest.toml \
-            ${{ (inputs.release && '--release') || '' }}\
+            --release \
             -o ~/packages \
             ~/drivers/drivers-*-*/
 
@@ -422,7 +421,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: docs-${{ matrix.vendor_version }}
+          name: docs
           path: "go/generated/mysql.md"
           retention-days: 2
 

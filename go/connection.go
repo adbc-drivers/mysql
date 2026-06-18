@@ -227,8 +227,12 @@ func (c *mysqlConnectionImpl) ListTableTypes(ctx context.Context) ([]string, err
 }
 
 // QuoteIdentifier implements BulkIngester
-func (c *mysqlConnectionImpl) QuoteIdentifier(name string) string {
-	return quoteIdentifier(name)
+func (c *mysqlConnectionImpl) QuoteIdentifiers(parts []string) string {
+	quoted := make([]string, len(parts))
+	for i, p := range parts {
+		quoted[i] = quoteIdentifier(p)
+	}
+	return strings.Join(quoted, ".")
 }
 
 // GetPlaceholder implements BulkIngester
@@ -240,7 +244,7 @@ func (c *mysqlConnectionImpl) GetPlaceholder(field *arrow.Field, index int) stri
 var _ sqlwrapper.BulkIngester = (*mysqlConnectionImpl)(nil)
 
 // ExecuteBulkIngest performs MySQL bulk ingest using batched INSERT statements.
-func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
+func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwrapper.StatementImpl, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	schema := stream.Schema()
 
 	// Validate MySQL-specific options before touching the database.
@@ -278,7 +282,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 	}
 
 	return sqlwrapper.ExecuteBatchedBulkIngest(
-		ctx, conn, options, stream,
+		ctx, stmt, conn, options, stream,
 		c.TypeConverter, c, &c.Base().ErrorHelper,
 	)
 }
