@@ -60,7 +60,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl
-      - pypi: git+https://github.com/adbc-drivers/validation#bf5bbe38957151af5c36639db8d23f89e08a041a
+      - pypi: git+https://github.com/adbc-drivers/validation#7654fca2d7725bcbd857925e3fce78d3bea5bd08
       - pypi: https://files.pythonhosted.org/packages/b9/4a/f4e3620f9542b092f31c3de6810e137cc1c01c33a5a25cc3f90a138b98a3/whenever-0.10.0-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       linux-aarch64:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/_openmp_mutex-4.5-20_gnu.conda
@@ -118,7 +118,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl
-      - pypi: git+https://github.com/adbc-drivers/validation#bf5bbe38957151af5c36639db8d23f89e08a041a
+      - pypi: git+https://github.com/adbc-drivers/validation#7654fca2d7725bcbd857925e3fce78d3bea5bd08
       - pypi: https://files.pythonhosted.org/packages/75/6f/a2ca2635fae996e030ab30b1ce0e1b54dbe19bbee5b303314eb5e53053bd/whenever-0.10.0-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
       osx-arm64:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/bzip2-1.0.8-hd037594_9.conda
@@ -170,7 +170,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl
-      - pypi: git+https://github.com/adbc-drivers/validation#bf5bbe38957151af5c36639db8d23f89e08a041a
+      - pypi: git+https://github.com/adbc-drivers/validation#7654fca2d7725bcbd857925e3fce78d3bea5bd08
       - pypi: https://files.pythonhosted.org/packages/f5/eb/2b3ef4807ceffcd7a447386350f180e8a130e87a642dd3f74c159eaa2573/whenever-0.10.0-cp314-cp314-macosx_11_0_arm64.whl
       win-64:
       - conda: https://conda.anaconda.org/conda-forge/win-64/bzip2-1.0.8-h0ad9c76_9.conda
@@ -226,7 +226,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/ce/e4/dccd7f47c4b64213ac01ef921a1337ee6e30e8c6466046018326977efd95/tzdata-2026.2-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/42/28/fc144409c71569e928585f8f3c629d80d1ca3ef40175e9222f01588f98c9/tzlocal-5.4.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl
-      - pypi: git+https://github.com/adbc-drivers/validation#bf5bbe38957151af5c36639db8d23f89e08a041a
+      - pypi: git+https://github.com/adbc-drivers/validation#7654fca2d7725bcbd857925e3fce78d3bea5bd08
       - pypi: https://files.pythonhosted.org/packages/c5/b2/8ad678802988ac7ad4937372cf8562f5c267d8ce605194a9409d4c1b9d82/whenever-0.10.0-cp314-cp314-win_amd64.whl
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
@@ -325,7 +325,7 @@ packages:
   - requests
   - ruamel-yaml>=0.18.11,<0.19
   - tomlkit>=0.13.2,<0.14
-- pypi: git+https://github.com/adbc-drivers/validation#bf5bbe38957151af5c36639db8d23f89e08a041a
+- pypi: git+https://github.com/adbc-drivers/validation#7654fca2d7725bcbd857925e3fce78d3bea5bd08
   name: adbc-drivers-validation
   version: '0.1'
   requires_dist:
