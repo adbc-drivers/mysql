@@ -167,6 +167,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	}
 
 	// Build Arrow schema from column information using type converter
+	typeConverter := makeTypeConverter()
 	fields := make([]arrow.Field, len(columns))
 	for i, col := range columns {
 		// Create ColumnType struct for the type converter
@@ -200,7 +201,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 			Scale:            scale,
 		}
 
-		arrowType, nullable, metadata, err := c.TypeConverter.ConvertRawColumnType(colType)
+		arrowType, nullable, metadata, err := typeConverter.ConvertRawColumnType(colType)
 		if err != nil {
 			return nil, c.ErrorHelper.WrapIO(err, "failed to convert column type for %s", col.ColumnName)
 		}
@@ -283,7 +284,7 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 
 	return sqlwrapper.ExecuteBatchedBulkIngest(
 		ctx, stmt, conn, options, stream,
-		c.TypeConverter, c, &c.Base().ErrorHelper,
+		stmt.MakeTypeConverter("MySQL"), c, &c.Base().ErrorHelper,
 	)
 }
 

@@ -127,7 +127,7 @@ func (q *MySQLQuirks) CreateSampleTable(tableName string, r arrow.RecordBatch) e
 			insertQuery.WriteString(tableName)
 			insertQuery.WriteString(" VALUES (")
 
-			values := make([]interface{}, r.NumCols())
+			values := make([]any, r.NumCols())
 			for col := range r.NumCols() {
 				column := r.Column(int(col))
 				if column.IsNull(int(row)) {
@@ -154,7 +154,7 @@ func (q *MySQLQuirks) CreateSampleTable(tableName string, r arrow.RecordBatch) e
 			}
 
 			// Build placeholders and collect non-null values for prepared statement
-			var queryParams []interface{}
+			var queryParams []any
 			for i, val := range values {
 				if i > 0 {
 					insertQuery.WriteString(", ")
@@ -240,6 +240,7 @@ func (q *MySQLQuirks) SupportsConcurrentStatements() bool          { return fals
 func (q *MySQLQuirks) SupportsCurrentCatalogSchema() bool          { return true }
 func (q *MySQLQuirks) SupportsExecuteSchema() bool                 { return true }
 func (q *MySQLQuirks) SupportsGetSetOptions() bool                 { return true }
+func (q *MySQLQuirks) SupportsGetTableSchema() bool                { return true }
 func (q *MySQLQuirks) SupportsPartitionedData() bool               { return false }
 func (q *MySQLQuirks) SupportsStatistics() bool                    { return false }
 func (q *MySQLQuirks) SupportsTransactions() bool                  { return false }
@@ -249,7 +250,7 @@ func (q *MySQLQuirks) SupportsErrorIngestIncompatibleSchema() bool { return true
 func (q *MySQLQuirks) Catalog() string                             { return "db" }
 func (q *MySQLQuirks) DBSchema() string                            { return "" }
 
-func (q *MySQLQuirks) GetMetadata(code adbc.InfoCode) interface{} {
+func (q *MySQLQuirks) GetMetadata(code adbc.InfoCode) any {
 	switch code {
 	case adbc.InfoDriverName:
 		return "ADBC Driver Foundry Driver for MySQL"
