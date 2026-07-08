@@ -38,11 +38,17 @@ type mySQLTypeConverter struct {
 	sqlwrapper.DefaultTypeConverter
 }
 
+func makeTypeConverter() sqlwrapper.TypeConverter {
+	return &mySQLTypeConverter{
+		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: "MySQL"},
+	}
+}
+
 // normalizeUnsignedTypeName converts "UNSIGNED INT" -> "INT UNSIGNED" format
 // The go-sql-driver/mysql returns "UNSIGNED X" but the default type converter expects "X UNSIGNED"
 func normalizeUnsignedTypeName(typeName string) string {
-	if strings.HasPrefix(typeName, "UNSIGNED ") {
-		return strings.TrimPrefix(typeName, "UNSIGNED ") + " UNSIGNED"
+	if after, ok := strings.CutPrefix(typeName, "UNSIGNED "); ok {
+		return after + " UNSIGNED"
 	}
 	return typeName
 }
@@ -290,19 +296,30 @@ func (f *mysqlConnectionFactory) CreateConnection(
 	}, nil
 }
 
+func (f *mysqlConnectionFactory) CreateStatement(stmt *sqlwrapper.StatementImplBase) (sqlwrapper.StatementImpl, error) {
+	return &mysqlStatement{
+		StatementImplBase: stmt,
+	}, nil
+}
+
+type mysqlStatement struct {
+	*sqlwrapper.StatementImplBase
+}
+
+func (s *mysqlStatement) MakeTypeConverter(vendorName string) sqlwrapper.TypeConverter {
+	return makeTypeConverter()
+}
+
 // infoSqlIdentifierQuoteChar is the Flight SQL GetSqlInfo code for
 // SQL_IDENTIFIER_QUOTE_CHAR, in the [500, 1000) XDBC range reserved by ADBC.
 const infoSqlIdentifierQuoteChar = 504
 
 // NewDriver constructs the ADBC Driver for "mysql".
 func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
-	vendorName := "MySQL"
-	typeConverter := &mySQLTypeConverter{
-		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
-	}
-
-	driver := sqlwrapper.NewDriver(alloc, "mysql", vendorName, NewMySQLDBFactory(), typeConverter).
-		WithConnectionFactory(&mysqlConnectionFactory{}).
+	factory := &mysqlConnectionFactory{}
+	driver := sqlwrapper.NewDriver(alloc, "mysql", "MySQL", NewMySQLDBFactory()).
+		WithConnectionFactory(factory).
+		WithStatementFactory(factory).
 		WithErrorInspector(MySQLErrorInspector{})
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
 		adbc.InfoDriverName:                       "ADBC Driver Foundry Driver for MySQL",

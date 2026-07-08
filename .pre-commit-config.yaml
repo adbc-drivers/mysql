@@ -59,3 +59,12 @@ repos:
   rev: bda3ef11c0a0abafb91050a1b4cc2d464aad0de7
   hooks:
   - id: rat
+
+- repo: local
+  hooks:
+  - id: gofix
+    name: go fix
+    language: system
+    types: [go]
+    entry: bash -c 'cd go && go fix ./...'
+    pass_filenames: false
