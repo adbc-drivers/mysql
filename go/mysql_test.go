@@ -23,6 +23,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/adbc-drivers/driverbase-go/validation"
@@ -804,6 +805,167 @@ func (s *MySQLTestSuite) TestBulkIngestManyColumns() {
 	s.Require().True(rdr.Next())
 	count := rdr.RecordBatch().Column(0).(*array.Int64).Value(0)
 	s.EqualValues(numRows, count)
+}
+
+func (s *MySQLTestSuite) TestZeroDatetimeBehaviorOptions() {
+	db, err := s.driver.NewDatabaseWithContext(s.ctx, map[string]string{
+		adbc.OptionKeyURI:                   s.dsn,
+		mysql.OptionKeyZeroDatetimeBehavior: mysql.OptionValueZeroDatetimeBehaviorConvertToNull,
+	})
+	s.Require().NoError(err)
+	defer func() { s.NoError(db.Close(s.ctx)) }()
+
+	dbOptions := db.(adbc.GetSetOptionsWithContext)
+	value, err := dbOptions.GetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior)
+	s.Require().NoError(err)
+	s.Equal(mysql.OptionValueZeroDatetimeBehaviorError, value)
+
+	cnxn, err := db.Open(s.ctx)
+	s.Require().NoError(err)
+	defer func() { s.NoError(cnxn.Close(s.ctx)) }()
+
+	cnxnOptions := cnxn.(adbc.GetSetOptionsWithContext)
+	value, err = cnxnOptions.GetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior)
+	s.Require().NoError(err)
+	s.Equal(mysql.OptionValueZeroDatetimeBehaviorError, value)
+
+	stmt, err := cnxn.NewStatement(s.ctx)
+	s.Require().NoError(err)
+	defer func() { s.NoError(stmt.Close(s.ctx)) }()
+
+	stmtOptions := stmt.(adbc.GetSetOptionsWithContext)
+	value, err = stmtOptions.GetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior)
+	s.Require().NoError(err)
+	s.Equal(mysql.OptionValueZeroDatetimeBehaviorError, value)
+
+	s.Require().NoError(cnxnOptions.SetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior, mysql.OptionValueZeroDatetimeBehaviorConvertToNull))
+	stmtAfterConnectionChange, err := cnxn.NewStatement(s.ctx)
+	s.Require().NoError(err)
+	defer func() { s.NoError(stmtAfterConnectionChange.Close(s.ctx)) }()
+
+	value, err = stmtAfterConnectionChange.(adbc.GetSetOptionsWithContext).GetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior)
+	s.Require().NoError(err)
+	s.Equal(mysql.OptionValueZeroDatetimeBehaviorConvertToNull, value)
+
+	s.Require().NoError(stmtOptions.SetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior, mysql.OptionValueZeroDatetimeBehaviorConvertToNull))
+	value, err = stmtOptions.GetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior)
+	s.Require().NoError(err)
+	s.Equal(mysql.OptionValueZeroDatetimeBehaviorConvertToNull, value)
+
+	value, err = cnxnOptions.GetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior)
+	s.Require().NoError(err)
+	s.Equal(mysql.OptionValueZeroDatetimeBehaviorConvertToNull, value)
+}
+
+func (s *MySQLTestSuite) TestZeroDatetimeBehaviorInvalidOptionValues() {
+	dbOptions := s.db.(adbc.GetSetOptionsWithContext)
+	cnxnOptions := s.cnxn.(adbc.GetSetOptionsWithContext)
+	stmtOptions := s.stmt.(adbc.GetSetOptionsWithContext)
+
+	err := dbOptions.SetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior, "invalid")
+	s.Require().Error(err)
+	var adbcErr adbc.Error
+	s.Require().Truef(errors.As(err, &adbcErr), "expected ADBC error, got %T: %v", err, err)
+	s.Equal(adbc.StatusInvalidArgument, adbcErr.Code)
+
+	err = cnxnOptions.SetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior, "invalid")
+	s.Require().Error(err)
+	adbcErr = adbc.Error{}
+	s.Require().Truef(errors.As(err, &adbcErr), "expected ADBC error, got %T: %v", err, err)
+	s.Equal(adbc.StatusInvalidArgument, adbcErr.Code)
+
+	err = stmtOptions.SetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior, "invalid")
+	s.Require().Error(err)
+	adbcErr = adbc.Error{}
+	s.Require().Truef(errors.As(err, &adbcErr), "expected ADBC error, got %T: %v", err, err)
+	s.Equal(adbc.StatusInvalidArgument, adbcErr.Code)
+}
+
+func (s *MySQLTestSuite) TestZeroDatetimeBehaviorQuery() {
+	stmt, err := s.cnxn.NewStatement(s.ctx)
+	s.Require().NoError(err)
+	defer func() { s.NoError(stmt.Close(s.ctx)) }()
+
+	s.Require().NoError(stmt.SetSqlQuery(s.ctx, "SET @adbc_old_sql_mode = @@SESSION.sql_mode"))
+	_, err = stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+	s.Require().NoError(stmt.SetSqlQuery(s.ctx, "SET SESSION sql_mode = ''"))
+	_, err = stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+	defer func() {
+		s.NoError(stmt.SetSqlQuery(s.ctx, "SET SESSION sql_mode = @adbc_old_sql_mode"))
+		_, err := stmt.ExecuteUpdate(s.ctx)
+		s.NoError(err)
+	}()
+
+	s.Require().NoError(stmt.SetSqlQuery(s.ctx, "DROP TEMPORARY TABLE IF EXISTS zero_datetime_values"))
+	_, err = stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+	defer func() {
+		s.NoError(stmt.SetSqlQuery(s.ctx, "DROP TEMPORARY TABLE IF EXISTS zero_datetime_values"))
+		_, err := stmt.ExecuteUpdate(s.ctx)
+		s.NoError(err)
+	}()
+
+	s.Require().NoError(stmt.SetSqlQuery(s.ctx, `
+		CREATE TEMPORARY TABLE zero_datetime_values (
+			id INT NOT NULL,
+			date_col DATE NULL,
+			datetime_col DATETIME NULL
+		)
+	`))
+	_, err = stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+
+	s.Require().NoError(stmt.SetSqlQuery(s.ctx, `
+		INSERT INTO zero_datetime_values (id, date_col, datetime_col) VALUES
+			(0, '0000-00-00', '0000-00-00 03:04:05'),
+			(1, '0000-01-02', '0000-01-02 03:04:05'),
+			(2, '2026-00-02', '2026-00-02 03:04:05'),
+			(3, '2026-07-00', '2026-07-00 03:04:05'),
+			(4, '2026-07-08', '2026-07-08 12:34:56')
+	`))
+	_, err = stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+
+	s.Require().NoError(stmt.SetSqlQuery(s.ctx, "SELECT date_col FROM zero_datetime_values ORDER BY id"))
+	rdr, _, err := stmt.ExecuteQuery(s.ctx)
+	s.Require().NoError(err)
+	defer rdr.Release()
+
+	s.False(rdr.Next())
+	err = rdr.Err()
+	s.Require().Error(err)
+	var adbcErr adbc.Error
+	s.Require().Truef(errors.As(err, &adbcErr), "expected ADBC error, got %T: %v", err, err)
+	s.Equal(adbc.StatusInvalidData, adbcErr.Code)
+
+	s.Require().NoError(stmt.SetOption(s.ctx, mysql.OptionKeyZeroDatetimeBehavior, mysql.OptionValueZeroDatetimeBehaviorConvertToNull))
+	s.Require().NoError(stmt.SetSqlQuery(s.ctx, "SELECT date_col, datetime_col FROM zero_datetime_values ORDER BY id"))
+	rdr, _, err = stmt.ExecuteQuery(s.ctx)
+	s.Require().NoError(err)
+	defer rdr.Release()
+
+	s.Require().True(rdr.Next())
+	rec := rdr.RecordBatch()
+	s.Require().EqualValues(5, rec.NumRows())
+
+	dateCol := rec.Column(0).(*array.Date32)
+	datetimeCol := rec.Column(1).(*array.Timestamp)
+	for i := range 4 {
+		s.True(dateCol.IsNull(i))
+		s.True(datetimeCol.IsNull(i))
+	}
+
+	s.False(dateCol.IsNull(4))
+	s.Equal(arrow.Date32FromTime(time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC)), dateCol.Value(4))
+
+	s.False(datetimeCol.IsNull(4))
+	timestampType := datetimeCol.DataType().(*arrow.TimestampType)
+	s.Equal(time.Date(2026, 7, 8, 12, 34, 56, 0, time.UTC), datetimeCol.Value(4).ToTime(timestampType.Unit))
+
+	s.False(rdr.Next())
+	s.NoError(rdr.Err())
 }
 
 func TestMySQLTypeTests(t *testing.T) {

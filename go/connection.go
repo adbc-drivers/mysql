@@ -167,7 +167,7 @@ func (c *mysqlConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	}
 
 	// Build Arrow schema from column information using type converter
-	typeConverter := makeTypeConverter()
+	typeConverter := makeTypeConverter(c.zeroDatetimeBehavior)
 	fields := make([]arrow.Field, len(columns))
 	for i, col := range columns {
 		// Create ColumnType struct for the type converter
