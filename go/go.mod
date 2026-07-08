@@ -17,9 +17,9 @@ module github.com/adbc-drivers/mysql
 go 1.26.0
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260708041743-db01124b4264
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260708041743-db01124b4264
-	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260708041743-db01124b4264
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260708063157-ff75c82f586f
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260708063157-ff75c82f586f
+	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260708063157-ff75c82f586f
 	github.com/apache/arrow-adbc/go/adbc v1.11.0
 	github.com/apache/arrow-go/v18 v18.6.0
 	github.com/go-ext/variant v1.2.4
@@ -29,7 +29,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
-	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20260708041743-db01124b4264 // indirect
+	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20260708063157-ff75c82f586f // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/apache/thrift v0.23.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

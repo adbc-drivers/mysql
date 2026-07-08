@@ -108,6 +108,13 @@ Examples:
 
 {{ types|safe }}
 
+## Options
+
+`mysql.query.zero_datetime_behavior`
+: **Values:** `error`, `convert_to_null`. **Default:** `error`.
+
+  Control what to do with DATE and TIMESTAMP values that contain zero components in the date (e.g. `0000-00-00`), which MySQL allows for backwards compatibility. By default, this will error; `convert_to_null` will instead treat these values as equivalent to null.
+
 ## Compatibility
 
 {{ compatibility_info|safe }}

@@ -16,6 +16,7 @@ package mysql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -33,14 +34,65 @@ import (
 	"github.com/go-ext/variant"
 )
 
+const (
+	OptionKeyZeroDatetimeBehavior = "mysql.query.zero_datetime_behavior"
+
+	OptionValueZeroDatetimeBehaviorError         = "error"
+	OptionValueZeroDatetimeBehaviorConvertToNull = "convert_to_null"
+)
+
+type zeroDatetimeBehavior int
+
+const (
+	zeroDatetimeBehaviorError zeroDatetimeBehavior = iota
+	zeroDatetimeBehaviorConvertToNull
+)
+
+func (b zeroDatetimeBehavior) String() string {
+	switch b {
+	case zeroDatetimeBehaviorError:
+		return OptionValueZeroDatetimeBehaviorError
+	case zeroDatetimeBehaviorConvertToNull:
+		return OptionValueZeroDatetimeBehaviorConvertToNull
+	default:
+		return OptionValueZeroDatetimeBehaviorError
+	}
+}
+
+func parseZeroDatetimeBehavior(value string, errorHelper *driverbase.ErrorHelper) (zeroDatetimeBehavior, error) {
+	switch value {
+	case OptionValueZeroDatetimeBehaviorError:
+		return zeroDatetimeBehaviorError, nil
+	case OptionValueZeroDatetimeBehaviorConvertToNull:
+		return zeroDatetimeBehaviorConvertToNull, nil
+	default:
+		if errorHelper == nil {
+			return zeroDatetimeBehaviorError, fmt.Errorf(
+				"invalid %s value %q, expected %q or %q",
+				OptionKeyZeroDatetimeBehavior,
+				value,
+				OptionValueZeroDatetimeBehaviorError,
+				OptionValueZeroDatetimeBehaviorConvertToNull)
+		}
+		return zeroDatetimeBehaviorError, errorHelper.InvalidArgument(
+			"invalid %s value %q, expected %q or %q",
+			OptionKeyZeroDatetimeBehavior,
+			value,
+			OptionValueZeroDatetimeBehaviorError,
+			OptionValueZeroDatetimeBehaviorConvertToNull)
+	}
+}
+
 // MySQLTypeConverter provides MySQL-specific type conversion enhancements
 type mySQLTypeConverter struct {
 	sqlwrapper.DefaultTypeConverter
+	zeroDatetimeBehavior zeroDatetimeBehavior
 }
 
-func makeTypeConverter() sqlwrapper.TypeConverter {
+func makeTypeConverter(zeroDatetimeBehavior zeroDatetimeBehavior) sqlwrapper.TypeConverter {
 	return &mySQLTypeConverter{
 		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: "MySQL"},
+		zeroDatetimeBehavior: zeroDatetimeBehavior,
 	}
 }
 
@@ -150,6 +202,36 @@ func (m *mySQLTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		}
 		// Fall through to default for non-spatial binary
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
+	case *arrow.Date32Type:
+		defaultInserter, err := m.DefaultTypeConverter.CreateInserter(field, builder)
+		if err != nil {
+			return nil, err
+		}
+		return &mysqlZeroDatetimeInserter{
+			builder:              builder,
+			defaultInserter:      defaultInserter,
+			zeroDatetimeBehavior: m.zeroDatetimeBehavior,
+		}, nil
+	case *arrow.Date64Type:
+		defaultInserter, err := m.DefaultTypeConverter.CreateInserter(field, builder)
+		if err != nil {
+			return nil, err
+		}
+		return &mysqlZeroDatetimeInserter{
+			builder:              builder,
+			defaultInserter:      defaultInserter,
+			zeroDatetimeBehavior: m.zeroDatetimeBehavior,
+		}, nil
+	case *arrow.TimestampType:
+		defaultInserter, err := m.DefaultTypeConverter.CreateInserter(field, builder)
+		if err != nil {
+			return nil, err
+		}
+		return &mysqlZeroDatetimeInserter{
+			builder:              builder,
+			defaultInserter:      defaultInserter,
+			zeroDatetimeBehavior: m.zeroDatetimeBehavior,
+		}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
@@ -215,6 +297,65 @@ func (ins *mysqlSpatialInserter) AppendValue(sqlValue any) error {
 	return nil
 }
 
+type mysqlZeroDatetimeInserter struct {
+	builder              array.Builder
+	defaultInserter      sqlwrapper.Inserter
+	zeroDatetimeBehavior zeroDatetimeBehavior
+}
+
+func (ins *mysqlZeroDatetimeInserter) AppendValue(sqlValue any) error {
+	isZeroDatetime, err := isZeroDatetimeValue(sqlValue)
+	if err != nil {
+		return err
+	}
+	if !isZeroDatetime {
+		return ins.defaultInserter.AppendValue(sqlValue)
+	}
+
+	switch ins.zeroDatetimeBehavior {
+	case zeroDatetimeBehaviorError:
+		return adbc.Error{
+			Code: adbc.StatusInvalidData,
+			Msg:  "zero datetime value cannot be converted to Arrow date or timestamp",
+		}
+	case zeroDatetimeBehaviorConvertToNull:
+		ins.builder.AppendNull()
+		return nil
+	default:
+		return adbc.Error{
+			Code: adbc.StatusInvalidData,
+			Msg:  "zero datetime value cannot be converted to Arrow date or timestamp",
+		}
+	}
+}
+
+func isZeroDatetimeValue(sqlValue any) (bool, error) {
+	switch v := sqlValue.(type) {
+	case nil:
+		return false, nil
+	case []byte:
+		return hasZeroDatePrefix(string(v)), nil
+	case string:
+		return hasZeroDatePrefix(v), nil
+	default:
+		return false, nil
+	}
+}
+
+func hasZeroDatePrefix(value string) bool {
+	if len(value) < len("0000-00-00") {
+		return false
+	}
+	if value[4] != '-' || value[7] != '-' {
+		return false
+	}
+
+	year := value[:4]
+	month := value[5:7]
+	day := value[8:10]
+	return year == "0000" || month == "00" || day == "00"
+}
+
 // ConvertArrowToGo implements MySQL-specific Arrow value to Go value conversion
 func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int, field *arrow.Field) (any, error) {
 	if arrowArray.IsNull(index) {
@@ -270,7 +411,8 @@ func (m *mySQLTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 type mysqlConnectionImpl struct {
 	*sqlwrapper.ConnectionImplBase // Embed sqlwrapper connection for all standard functionality
 
-	version string
+	version              string
+	zeroDatetimeBehavior zeroDatetimeBehavior
 }
 
 // implements BulkIngester interface
@@ -283,31 +425,139 @@ var _ driverbase.CurrentNamespacer = (*mysqlConnectionImpl)(nil)
 var _ driverbase.TableTypeLister = (*mysqlConnectionImpl)(nil)
 
 // mysqlConnectionFactory creates MySQL connections
-type mysqlConnectionFactory struct{}
+type mysqlConnectionFactory struct {
+}
 
-// CreateConnection implements sqlwrapper.ConnectionFactory
+func (f *mysqlConnectionFactory) CreateDatabase(database *sqlwrapper.DatabaseImplBase) (sqlwrapper.DatabaseImpl, error) {
+	return &mysqlDatabase{
+		DatabaseImplBase:     database,
+		zeroDatetimeBehavior: zeroDatetimeBehaviorError,
+	}, nil
+}
+
 func (f *mysqlConnectionFactory) CreateConnection(
 	ctx context.Context,
 	conn *sqlwrapper.ConnectionImplBase,
 ) (sqlwrapper.ConnectionImpl, error) {
 	// Wrap the pre-built sqlwrapper connection with MySQL-specific functionality
 	return &mysqlConnectionImpl{
-		ConnectionImplBase: conn,
+		ConnectionImplBase:   conn,
+		zeroDatetimeBehavior: conn.Database.Derived.(*mysqlDatabase).zeroDatetimeBehavior,
 	}, nil
 }
 
 func (f *mysqlConnectionFactory) CreateStatement(stmt *sqlwrapper.StatementImplBase) (sqlwrapper.StatementImpl, error) {
 	return &mysqlStatement{
-		StatementImplBase: stmt,
+		StatementImplBase:    stmt,
+		zeroDatetimeBehavior: stmt.Conn.Derived.(*mysqlConnectionImpl).zeroDatetimeBehavior,
 	}, nil
+}
+
+type mysqlDatabase struct {
+	*sqlwrapper.DatabaseImplBase
+	zeroDatetimeBehavior zeroDatetimeBehavior
+}
+
+func (db *mysqlDatabase) SetOptions(ctx context.Context, opts map[string]string) error {
+	for key, value := range opts {
+		if err := db.SetOption(ctx, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *mysqlDatabase) GetOption(ctx context.Context, key string) (string, error) {
+	switch key {
+	case OptionKeyZeroDatetimeBehavior:
+		return db.zeroDatetimeBehavior.String(), nil
+	default:
+		return db.DatabaseImplBase.GetOption(ctx, key)
+	}
+}
+
+func (db *mysqlDatabase) SetOption(ctx context.Context, key, value string) error {
+	switch key {
+	case OptionKeyZeroDatetimeBehavior:
+		behavior, err := parseZeroDatetimeBehavior(value, &db.ErrorHelper)
+		if err != nil {
+			return err
+		}
+		db.zeroDatetimeBehavior = behavior
+		return nil
+	default:
+		return db.DatabaseImplBase.SetOption(ctx, key, value)
+	}
 }
 
 type mysqlStatement struct {
 	*sqlwrapper.StatementImplBase
+	zeroDatetimeBehavior zeroDatetimeBehavior
 }
 
 func (s *mysqlStatement) MakeTypeConverter(vendorName string) sqlwrapper.TypeConverter {
-	return makeTypeConverter()
+	return makeTypeConverter(s.zeroDatetimeBehavior)
+}
+
+func (c *mysqlConnectionImpl) NewStatement(ctx context.Context) (adbc.StatementWithContext, error) {
+	stmt, err := c.ConnectionImplBase.NewStatement(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := stmt.SetOption(ctx, OptionKeyZeroDatetimeBehavior, c.zeroDatetimeBehavior.String()); err != nil {
+		closeErr := stmt.Close(ctx)
+		if closeErr != nil {
+			return nil, errors.Join(err, closeErr)
+		}
+		return nil, err
+	}
+	return stmt, nil
+}
+
+func (c *mysqlConnectionImpl) GetOption(ctx context.Context, key string) (string, error) {
+	switch key {
+	case OptionKeyZeroDatetimeBehavior:
+		return c.zeroDatetimeBehavior.String(), nil
+	default:
+		return c.ConnectionImplBase.GetOption(ctx, key)
+	}
+}
+
+func (c *mysqlConnectionImpl) SetOption(ctx context.Context, key, value string) error {
+	switch key {
+	case OptionKeyZeroDatetimeBehavior:
+		behavior, err := parseZeroDatetimeBehavior(value, &c.Base().ErrorHelper)
+		if err != nil {
+			return err
+		}
+		c.zeroDatetimeBehavior = behavior
+		return nil
+	default:
+		return c.ConnectionImplBase.SetOption(ctx, key, value)
+	}
+}
+
+func (s *mysqlStatement) GetOption(ctx context.Context, key string) (string, error) {
+	switch key {
+	case OptionKeyZeroDatetimeBehavior:
+		return s.zeroDatetimeBehavior.String(), nil
+	default:
+		return s.StatementImplBase.GetOption(ctx, key)
+	}
+}
+
+func (s *mysqlStatement) SetOption(ctx context.Context, key, value string) error {
+	switch key {
+	case OptionKeyZeroDatetimeBehavior:
+		behavior, err := parseZeroDatetimeBehavior(value, &s.Base().ErrorHelper)
+		if err != nil {
+			return err
+		}
+		s.zeroDatetimeBehavior = behavior
+		return nil
+	default:
+		return s.StatementImplBase.SetOption(ctx, key, value)
+	}
 }
 
 // infoSqlIdentifierQuoteChar is the Flight SQL GetSqlInfo code for
@@ -318,6 +568,7 @@ const infoSqlIdentifierQuoteChar = 504
 func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 	factory := &mysqlConnectionFactory{}
 	driver := sqlwrapper.NewDriver(alloc, "mysql", "MySQL", NewMySQLDBFactory()).
+		WithDatabaseFactory(factory).
 		WithConnectionFactory(factory).
 		WithStatementFactory(factory).
 		WithErrorInspector(MySQLErrorInspector{})
@@ -327,6 +578,5 @@ func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 		adbc.InfoVendorSubstrait:                  false,
 		adbc.InfoCode(infoSqlIdentifierQuoteChar): "`",
 	})
-
 	return driver
 }
