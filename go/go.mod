@@ -14,7 +14,7 @@
 
 module github.com/adbc-drivers/mysql
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260708063157-ff75c82f586f
