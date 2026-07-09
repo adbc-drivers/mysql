@@ -50,8 +50,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.6.17-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-8_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
-      - pypi: git+https://github.com/adbc-drivers/dev#d9d95cb459ec4e9af99be48f7a484c32d8558172
-      - pypi: git+https://github.com/adbc-drivers/validation#575a41bfd96b09d9d8a057d0ea1e66a27a315475
+      - pypi: git+https://github.com/adbc-drivers/dev#d75c82f6d058622a95b5e0f5e0f49e291ecc9163
+      - pypi: git+https://github.com/adbc-drivers/validation#8f0de4199f651122df6c980827e43accb1fc6c88
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1f/f1/4985e6601061deb8e0c7e4125df32369a3c4fb252a02cb38c2676c70c4e6/whenever-0.10.2-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
@@ -108,8 +108,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.6.17-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-8_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
-      - pypi: git+https://github.com/adbc-drivers/dev#d9d95cb459ec4e9af99be48f7a484c32d8558172
-      - pypi: git+https://github.com/adbc-drivers/validation#575a41bfd96b09d9d8a057d0ea1e66a27a315475
+      - pypi: git+https://github.com/adbc-drivers/dev#d75c82f6d058622a95b5e0f5e0f49e291ecc9163
+      - pypi: git+https://github.com/adbc-drivers/validation#8f0de4199f651122df6c980827e43accb1fc6c88
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/19/6c/4aabac7ed4d5944f544b7cf7881d50fe4b34eac908605291b633a53be875/adbc_driver_manager-1.11.0-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl
@@ -159,8 +159,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/readline-8.3-h46df422_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-h010d191_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
-      - pypi: git+https://github.com/adbc-drivers/dev#d9d95cb459ec4e9af99be48f7a484c32d8558172
-      - pypi: git+https://github.com/adbc-drivers/validation#575a41bfd96b09d9d8a057d0ea1e66a27a315475
+      - pypi: git+https://github.com/adbc-drivers/dev#d75c82f6d058622a95b5e0f5e0f49e291ecc9163
+      - pypi: git+https://github.com/adbc-drivers/validation#8f0de4199f651122df6c980827e43accb1fc6c88
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/10/b2/b9dc7624b105d414585b8530451c1162c0b4750c0be9be2e497bb47a8a9b/duckdb-1.5.4-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl
@@ -212,8 +212,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36231-h1b9f54f_39.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36231-h1b9f54f_39.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
-      - pypi: git+https://github.com/adbc-drivers/dev#d9d95cb459ec4e9af99be48f7a484c32d8558172
-      - pypi: git+https://github.com/adbc-drivers/validation#575a41bfd96b09d9d8a057d0ea1e66a27a315475
+      - pypi: git+https://github.com/adbc-drivers/dev#d75c82f6d058622a95b5e0f5e0f49e291ecc9163
+      - pypi: git+https://github.com/adbc-drivers/validation#8f0de4199f651122df6c980827e43accb1fc6c88
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl
@@ -1279,7 +1279,7 @@ packages:
     - zstd >=1.5.7,<1.6.0a0
   size: 388453
   timestamp: 1764777142545
-- pypi: git+https://github.com/adbc-drivers/dev#d9d95cb459ec4e9af99be48f7a484c32d8558172
+- pypi: git+https://github.com/adbc-drivers/dev#d75c82f6d058622a95b5e0f5e0f49e291ecc9163
   name: adbc-drivers-dev
   version: '0.1'
   requires_dist:
@@ -1292,7 +1292,7 @@ packages:
   - requests
   - ruamel-yaml>=0.18.11,<0.19
   - tomlkit>=0.13.2,<0.14
-- pypi: git+https://github.com/adbc-drivers/validation#575a41bfd96b09d9d8a057d0ea1e66a27a315475
+- pypi: git+https://github.com/adbc-drivers/validation#8f0de4199f651122df6c980827e43accb1fc6c88
   name: adbc-drivers-validation
   version: '0.1'
   requires_dist:
