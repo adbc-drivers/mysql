@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,10 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# pixi environments
-.pixi
-*.egg-info
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
 
-generated/
-validation-report.xml
-.otel/
+processors:
+  batch:
+
+exporters:
+  file:
+    path: /otel/temp_telemetry.json
+    format: json
+    append: false
+    flush_interval: 100ms
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]

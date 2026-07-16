@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025-2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ class MySQLQuirks(model.DriverQuirks):
     driver = "adbc_driver_mysql"
     driver_name = "ADBC Driver Foundry Driver for MySQL"
     vendor_name = "MySQL"
-    vendor_version = "9.4.0 (MySQL Community Server - GPL)"
-    short_version = "9.4"
+    vendor_version = "9.7.1 (MySQL Community Server - GPL)"
+    short_version = "9.7"
     features = model.DriverFeatures(
         connection_get_table_schema=True,
         connection_transactions=False,
