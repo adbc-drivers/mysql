@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025-2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ from . import mysql
 
 @functools.cache
 def get_quirks(version: str, *, vendor: str) -> model.DriverQuirks:
-    if vendor == "mysql" and version == "9.4":
+    if vendor == "mysql" and version == "9.7":
         return mysql.MySQLQuirks()
     elif vendor == "mariadb" and version == "12.2":
         return mysql.MariaDBQuirks()

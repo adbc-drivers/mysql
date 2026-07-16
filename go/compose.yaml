@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025-2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,10 @@
 name: mysql
 services:
   test-service:
-    image: mysql:9.4
+    image: mysql:9.7
+    depends_on:
+      otel-collector:
+        condition: service_started
     environment:
       MYSQL_ROOT_PASSWORD: "password"
       MYSQL_DATABASE: db
@@ -29,6 +32,17 @@ services:
       start_period: 20s
     ports:
       - 3306:3306
+    volumes:
+      - ./ci/docker/mysql-init.sql:/docker-entrypoint-initdb.d/mysql-init.sql:ro
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.156.0
+    user: "0:0"
+    command: ["--config=/otel/collector.yaml"]
+    ports:
+      - 4318:4318
+    volumes:
+      - ./.otel:/otel
 
   mariadb:
     image: mariadb:12.2
