@@ -34,7 +34,9 @@ def pytest_generate_tests(metafunc) -> None:
                 pytest.param(
                     "databend:12.2",
                     id="databend:12.2",
-                    marks=pytest.mark.skip("get_objects is disabled for Databend MySQL wire"),
+                    marks=pytest.mark.skip(
+                        "get_objects is disabled for Databend MySQL wire"
+                    ),
                 )
             ],
             scope="module",
