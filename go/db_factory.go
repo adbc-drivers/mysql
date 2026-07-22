@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
@@ -43,8 +44,9 @@ func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 		return nil, err
 	}
 
-	// Force UTC timezone for all connections to ensure consistent timestamp handling.
-	dsn, err = f.forceUTCTimezone(dsn, logger)
+	// Use UTC client-side parsing for all backends, and set a session timezone
+	// parameter only for MySQL-compatible backends that support it.
+	dsn, err = f.applyUTCSettings(dsn, opts[OptionKeyVendor], logger)
 	if err != nil {
 		return nil, err
 	}
@@ -57,34 +59,39 @@ func (f *MySQLDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 	return db, nil
 }
 
-// forceUTCTimezone parses the DSN and overrides the time_zone and loc parameters to UTC
-func (f *MySQLDBFactory) forceUTCTimezone(dsn string, logger *slog.Logger) (string, error) {
+// applyUTCSettings parses the DSN, forces client-side time parsing to UTC, and
+// sets a UTC session timezone parameter for MySQL-compatible backends.
+func (f *MySQLDBFactory) applyUTCSettings(dsn, vendor string, logger *slog.Logger) (string, error) {
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse DSN for timezone override: %v", err)
+		return "", fmt.Errorf("failed to parse DSN for UTC settings: %v", err)
 	}
+	normalizedVendor := strings.ToLower(strings.TrimSpace(vendor))
 
-	if existingTz, exists := cfg.Params["time_zone"]; exists && existingTz != "'+00:00'" && existingTz != "'UTC'" {
-		if logger != nil {
-			logger.Warn("time_zone parameter is not supported, overriding to UTC",
-				"requested_timezone", existingTz,
-				"reason", "UTC is required for ADBC MySQL driver")
-		}
-	}
-
-	if existingLoc, exists := cfg.Params["loc"]; exists && existingLoc != "UTC" {
+	if cfg.Loc != nil && cfg.Loc != time.UTC {
 		if logger != nil {
 			logger.Warn("loc parameter is not supported, overriding to UTC",
-				"requested_loc", existingLoc,
+				"requested_loc", cfg.Loc.String(),
 				"reason", "UTC is required for ADBC MySQL driver")
 		}
 	}
+	cfg.Loc = time.UTC
 
 	if cfg.Params == nil {
 		cfg.Params = make(map[string]string)
 	}
-	cfg.Params["time_zone"] = "'+00:00'"
-	cfg.Params["loc"] = "UTC"
+
+	switch normalizedVendor {
+	case "", OptionValueVendorMySQL, OptionValueVendorMariaDB:
+		if existingTz, exists := cfg.Params["time_zone"]; exists && existingTz != "'+00:00'" && existingTz != "'UTC'" {
+			if logger != nil {
+				logger.Warn("time_zone parameter is not supported, overriding to UTC",
+					"requested_timezone", existingTz,
+					"reason", "UTC is required for ADBC MySQL driver")
+			}
+		}
+		cfg.Params["time_zone"] = "'+00:00'"
+	}
 
 	return cfg.FormatDSN(), nil
 }

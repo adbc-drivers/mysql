@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import adbc_drivers_validation.tests.statement
+import adbc_driver_manager.dbapi
+import pytest
 from adbc_drivers_validation.tests.statement import (
     TestStatement,  # noqa: F401
 )
@@ -21,5 +23,41 @@ from . import mysql
 
 
 def pytest_generate_tests(metafunc) -> None:
-    quirks = [mysql.get_quirks(metafunc.config.getoption("vendor_version"))]
+    test_config = metafunc.config.getoption("vendor_version")
+    quirks = [mysql.get_quirks(test_config)]
+    if (
+        metafunc.definition.name == "test_rows_affected"
+        and test_config == "databend"
+    ):
+        metafunc.parametrize(
+            "driver",
+            [
+                pytest.param(
+                    "databend:12.2",
+                    id="databend:12.2",
+                    marks=pytest.mark.skip("rows_affected semantics differ on Databend MySQL wire"),
+                )
+            ],
+            scope="module",
+            indirect=["driver"],
+        )
+        return
+    if metafunc.definition.name == "test_prepare" and test_config == "databend":
+        metafunc.parametrize(
+            "driver",
+            [
+                pytest.param(
+                    "databend:12.2",
+                    id="databend:12.2",
+                    marks=pytest.mark.xfail(
+                        raises=adbc_driver_manager.dbapi.InternalError,
+                        strict=True,
+                        reason="Databend reports unsupported prepare as InternalError over MySQL wire",
+                    ),
+                )
+            ],
+            scope="module",
+            indirect=["driver"],
+        )
+        return
     return adbc_drivers_validation.tests.statement.generate_tests(quirks, metafunc)

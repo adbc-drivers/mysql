@@ -59,3 +59,17 @@ services:
       start_period: 20s
     ports:
       - 3307:3306
+
+  databend:
+    image: datafuselabs/databend
+    environment:
+      QUERY_DEFAULT_USER: root
+      QUERY_DEFAULT_PASSWORD: ""
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "echo >/dev/tcp/127.0.0.1/3307"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    ports:
+      - 3308:3307

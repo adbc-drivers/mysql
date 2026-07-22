@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import adbc_drivers_validation.tests.connection
+import pytest
 from adbc_drivers_validation.tests.connection import (
     TestConnection,  # noqa: F401
 )
@@ -21,5 +22,23 @@ from . import mysql
 
 
 def pytest_generate_tests(metafunc) -> None:
-    quirks = [mysql.get_quirks(metafunc.config.getoption("vendor_version"))]
+    test_config = metafunc.config.getoption("vendor_version")
+    quirks = [mysql.get_quirks(test_config)]
+    if (
+        metafunc.definition.name == "test_get_objects_table_not_exist"
+        and test_config == "databend"
+    ):
+        metafunc.parametrize(
+            "driver",
+            [
+                pytest.param(
+                    "databend:12.2",
+                    id="databend:12.2",
+                    marks=pytest.mark.skip("get_objects is disabled for Databend MySQL wire"),
+                )
+            ],
+            scope="module",
+            indirect=["driver"],
+        )
+        return
     return adbc_drivers_validation.tests.connection.generate_tests(quirks, metafunc)
