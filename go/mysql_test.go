@@ -244,7 +244,7 @@ func (q *MySQLQuirks) SupportsGetSetOptions() bool                 { return true
 func (q *MySQLQuirks) SupportsGetTableSchema() bool                { return true }
 func (q *MySQLQuirks) SupportsPartitionedData() bool               { return false }
 func (q *MySQLQuirks) SupportsStatistics() bool                    { return false }
-func (q *MySQLQuirks) SupportsTransactions() bool                  { return false }
+func (q *MySQLQuirks) SupportsTransactions() bool                  { return true }
 func (q *MySQLQuirks) SupportsGetParameterSchema() bool            { return false }
 func (q *MySQLQuirks) SupportsDynamicParameterBinding() bool       { return true }
 func (q *MySQLQuirks) SupportsErrorIngestIncompatibleSchema() bool { return true }
@@ -966,6 +966,177 @@ func (s *MySQLTestSuite) TestZeroDatetimeBehaviorQuery() {
 
 	s.False(rdr.Next())
 	s.NoError(rdr.Err())
+}
+
+// TestTransactions verifies that disabling autocommit and using Commit/Rollback
+// produces the expected session-level transaction semantics. The cnxn is shared
+// with the rest of MySQLTestSuite, so we restore autocommit to enabled in a
+// defer and clean up any test tables.
+func (s *MySQLTestSuite) TestTransactions() {
+	cnxnOpts, ok := s.cnxn.(adbc.GetSetOptionsWithContext)
+	s.Require().Truef(ok, "expected connection to implement GetSetOptionsWithContext")
+
+	// Save the initial autocommit state (expected: enabled per SetupSuite)
+	initialAC, err := cnxnOpts.GetOption(s.ctx, adbc.OptionKeyAutoCommit)
+	s.Require().NoError(err)
+
+	// Always restore autocommit at the end so other suite tests see
+	// default state.
+	defer func() {
+		_ = cnxnOpts.SetOption(s.ctx, adbc.OptionKeyAutoCommit, adbc.OptionValueEnabled)
+		_ = s.stmt.SetSqlQuery(s.ctx, "DROP TABLE IF EXISTS `adbc_tx_test`")
+		_, _ = s.stmt.ExecuteUpdate(s.ctx)
+	}()
+
+	// Clean slate
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, "DROP TABLE IF EXISTS `adbc_tx_test`"))
+	_, err = s.stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, "CREATE TABLE `adbc_tx_test` (id INT NOT NULL)"))
+	_, err = s.stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+
+	countRows := func() int64 {
+		s.NoError(s.stmt.SetSqlQuery(s.ctx, "SELECT COUNT(*) FROM `adbc_tx_test`"))
+		rdr, _, err := s.stmt.ExecuteQuery(s.ctx)
+		s.Require().NoError(err)
+		defer rdr.Release()
+		s.True(rdr.Next())
+		rec := rdr.RecordBatch()
+		s.Require().EqualValues(1, rec.NumRows())
+		return rec.Column(0).(*array.Int64).Value(0)
+	}
+
+	// --- Rollback path ---
+	s.NoError(cnxnOpts.SetOption(s.ctx, adbc.OptionKeyAutoCommit, adbc.OptionValueDisabled))
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, "INSERT INTO `adbc_tx_test` (id) VALUES (1)"))
+	_, err = s.stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+	s.EqualValues(1, countRows(), "row should be visible within the transaction")
+	s.NoError(s.cnxn.Rollback(s.ctx))
+	s.EqualValues(0, countRows(), "rollback should have discarded the insert")
+
+	// --- Commit path ---
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, "INSERT INTO `adbc_tx_test` (id) VALUES (2)"))
+	_, err = s.stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+	s.EqualValues(1, countRows(), "row should be visible within the transaction")
+	s.NoError(s.cnxn.Commit(s.ctx))
+	// After Commit, chained-transaction semantics mean a new tx is open;
+	// the committed row is now durable and (after re-enabling ac) visible.
+	s.NoError(cnxnOpts.SetOption(s.ctx, adbc.OptionKeyAutoCommit, adbc.OptionValueEnabled))
+	s.EqualValues(1, countRows(), "committed row should be visible after re-enabling autocommit")
+
+	// --- Re-enabling autocommit returns the cached flag ---
+	currentAC, err := cnxnOpts.GetOption(s.ctx, adbc.OptionKeyAutoCommit)
+	s.Require().NoError(err)
+	s.Equal(adbc.OptionValueEnabled, currentAC)
+	_ = initialAC // suppress unused-variable; kept for clarity
+}
+
+// TestIsolationLevels verifies that supported ADBC isolation levels round-trip
+// to MySQL's session transaction_isolation variable, and that unsupported /
+// unknown levels produce the expected ADBC error codes.
+func (s *MySQLTestSuite) TestIsolationLevels() {
+	cnxnOpts, ok := s.cnxn.(adbc.GetSetOptionsWithContext)
+	s.Require().Truef(ok, "expected connection to implement GetSetOptionsWithContext")
+
+	supportedCases := []struct {
+		level    adbc.OptionIsolationLevel
+		expected string // value returned by @@SESSION.transaction_isolation
+	}{
+		{adbc.LevelReadUncommitted, "READ-UNCOMMITTED"},
+		{adbc.LevelReadCommitted, "READ-COMMITTED"},
+		{adbc.LevelRepeatableRead, "REPEATABLE-READ"},
+		{adbc.LevelSerializable, "SERIALIZABLE"},
+		{adbc.LevelDefault, "REPEATABLE-READ"}, // MySQL's documented default
+	}
+
+	// Capture the session's starting isolation level so we can restore it.
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, "SELECT @@SESSION.transaction_isolation"))
+	rdr, _, err := s.stmt.ExecuteQuery(s.ctx)
+	s.Require().NoError(err)
+	rdr.Next()
+	initialLevel := rdr.RecordBatch().Column(0).(*array.String).Value(0)
+	rdr.Release()
+
+	defer func() {
+		// Restore the server session default by issuing an explicit SET SESSION
+		s.NoError(s.stmt.SetSqlQuery(s.ctx,
+			fmt.Sprintf("SET SESSION TRANSACTION ISOLATION LEVEL %s", initialLevel)))
+		_, _ = s.stmt.ExecuteUpdate(s.ctx)
+	}()
+
+	for _, tc := range supportedCases {
+		s.Run(string(tc.level), func() {
+			s.NoError(cnxnOpts.SetOption(s.ctx, adbc.OptionKeyIsolationLevel, string(tc.level)))
+			s.NoError(s.stmt.SetSqlQuery(s.ctx, "SELECT @@SESSION.transaction_isolation"))
+			rdr, _, err := s.stmt.ExecuteQuery(s.ctx)
+			s.Require().NoError(err)
+			defer rdr.Release()
+			s.True(rdr.Next())
+			got := rdr.RecordBatch().Column(0).(*array.String).Value(0)
+			s.Equal(tc.expected, got, "isolation level %s", tc.level)
+		})
+	}
+
+	// Unsupported levels return StatusNotImplemented per the ADBC spec.
+	for _, level := range []adbc.OptionIsolationLevel{adbc.LevelSnapshot, adbc.LevelLinearizable} {
+		s.Run("unsupported_"+string(level), func() {
+			err := cnxnOpts.SetOption(s.ctx, adbc.OptionKeyIsolationLevel, string(level))
+			s.Require().Error(err)
+			var adbcErr adbc.Error
+			s.Require().Truef(errors.As(err, &adbcErr), "expected ADBC error, got %T: %v", err, err)
+			s.Equal(adbc.StatusNotImplemented, adbcErr.Code)
+		})
+	}
+
+	// An unknown level value returns StatusInvalidArgument.
+	s.Run("unknown_level", func() {
+		err := cnxnOpts.SetOption(s.ctx, adbc.OptionKeyIsolationLevel, "adbc.connection.transaction.isolation.bogus")
+		s.Require().Error(err)
+		var adbcErr adbc.Error
+		s.Require().Truef(errors.As(err, &adbcErr), "expected ADBC error, got %T: %v", err, err)
+		s.Equal(adbc.StatusInvalidArgument, adbcErr.Code)
+	})
+}
+
+// TestIsolationLevelGetOption verifies that the last-set isolation level can
+// be read back via GetOption(OptionKeyIsolationLevel).
+func (s *MySQLTestSuite) TestIsolationLevelGetOption() {
+	cnxnOpts, ok := s.cnxn.(adbc.GetSetOptionsWithContext)
+	s.Require().Truef(ok, "expected connection to implement GetSetOptionsWithContext")
+
+	// Capture whatever level is currently cached so we can restore it.
+	initial, err := cnxnOpts.GetOption(s.ctx, adbc.OptionKeyIsolationLevel)
+	s.Require().NoError(err)
+
+	defer func() {
+		// Best-effort restore. We only set if the initial value was non-empty;
+		// an empty cache means "never set" and we leave that state by issuing a
+		// known-safe level (MySQL default) so subsequent tests are deterministic.
+		if initial != "" {
+			_ = cnxnOpts.SetOption(s.ctx, adbc.OptionKeyIsolationLevel, initial)
+		} else {
+			_ = cnxnOpts.SetOption(s.ctx, adbc.OptionKeyIsolationLevel, string(adbc.LevelDefault))
+			// Now reset the cache to empty by reading GetOption (we can't
+			// directly clear; the empty-string behaviour is approximated).
+		}
+	}()
+
+	for _, level := range []adbc.OptionIsolationLevel{
+		adbc.LevelReadCommitted,
+		adbc.LevelSerializable,
+		adbc.LevelRepeatableRead,
+	} {
+		s.Run(string(level), func() {
+			s.NoError(cnxnOpts.SetOption(s.ctx, adbc.OptionKeyIsolationLevel, string(level)))
+			got, err := cnxnOpts.GetOption(s.ctx, adbc.OptionKeyIsolationLevel)
+			s.Require().NoError(err)
+			s.Equal(string(level), got)
+		})
+	}
 }
 
 func TestMySQLTypeTests(t *testing.T) {
