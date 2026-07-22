@@ -413,6 +413,13 @@ type mysqlConnectionImpl struct {
 
 	version              string
 	zeroDatetimeBehavior zeroDatetimeBehavior
+	// activeTransaction tracks whether a BEGIN has been issued on this session
+	// (i.e. autocommit is disabled and a transaction is currently open).
+	activeTransaction bool
+	// currentIsolationLevel caches the last isolation level applied via
+	// adbc.OptionKeyIsolationLevel so GetOption can return it. Empty string
+	// means no level has been set (the session default is in effect).
+	currentIsolationLevel adbc.OptionIsolationLevel
 }
 
 // implements BulkIngester interface
@@ -423,6 +430,9 @@ var _ driverbase.CurrentNamespacer = (*mysqlConnectionImpl)(nil)
 
 // implements TableTypeLister interface
 var _ driverbase.TableTypeLister = (*mysqlConnectionImpl)(nil)
+
+// implements AutocommitSetter interface (auto-registered by sqlwrapper)
+var _ driverbase.AutocommitSetter = (*mysqlConnectionImpl)(nil)
 
 // mysqlConnectionFactory creates MySQL connections
 type mysqlConnectionFactory struct {
@@ -451,6 +461,96 @@ func (f *mysqlConnectionFactory) CreateStatement(stmt *sqlwrapper.StatementImplB
 		StatementImplBase:    stmt,
 		zeroDatetimeBehavior: stmt.Conn.Derived.(*mysqlConnectionImpl).zeroDatetimeBehavior,
 	}, nil
+}
+
+// mysqlIsolationLevelStatement maps an ADBC OptionIsolationLevel to a MySQL
+// `SET SESSION TRANSACTION ISOLATION LEVEL ...` statement. Unsupported levels
+// (SNAPSHOT, LINEARIZABLE) return StatusNotImplemented per the ADBC spec.
+func mysqlIsolationLevelStatement(l adbc.OptionIsolationLevel) (string, error) {
+	switch l {
+	case adbc.LevelDefault:
+		// MySQL's documented default isolation level is REPEATABLE READ.
+		// This mirrors the C++ PostgreSQL driver's handling of LevelDefault
+		// (which sends the backend's documented default, READ COMMITTED).
+		return "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ", nil
+	case adbc.LevelReadUncommitted:
+		return "SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED", nil
+	case adbc.LevelReadCommitted:
+		return "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED", nil
+	case adbc.LevelRepeatableRead:
+		return "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ", nil
+	case adbc.LevelSerializable:
+		return "SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE", nil
+	case adbc.LevelSnapshot, adbc.LevelLinearizable:
+		return "", adbc.Error{
+			Code: adbc.StatusNotImplemented,
+			Msg:  fmt.Sprintf("[MySQL] isolation level %q not supported", string(l)),
+		}
+	default:
+		return "", adbc.Error{
+			Code: adbc.StatusInvalidArgument,
+			Msg:  fmt.Sprintf("[MySQL] unknown isolation level %q", string(l)),
+		}
+	}
+}
+
+// SetAutocommit implements driverbase.AutocommitSetter. Disabling autocommit
+// begins a transaction on the dedicated session connection; enabling it
+// commits any in-flight transaction and lets subsequent statements
+// auto-commit (the MySQL default). State is mirrored by the driverbase
+// wrapper into Base().Autocommit after a successful return.
+//
+// The previously-set isolation level, if any, is already persisted at the
+// SESSION scope via `SET SESSION TRANSACTION ISOLATION LEVEL ...` in
+// SetOption, so it automatically applies to subsequent transactions without
+// any re-application here.
+func (c *mysqlConnectionImpl) SetAutocommit(ctx context.Context, enabled bool) error {
+	if enabled {
+		if c.activeTransaction {
+			if _, err := c.Conn.ExecContext(ctx, "COMMIT"); err != nil {
+				return c.Base().ErrorHelper.Errorf(adbc.StatusInternal, "COMMIT failed: %v", err)
+			}
+			c.activeTransaction = false
+		}
+		// MySQL connections auto-commit by default; nothing else to do.
+		return nil
+	}
+	// Disabling autocommit: open a transaction if one isn't already open.
+	if !c.activeTransaction {
+		if _, err := c.Conn.ExecContext(ctx, "BEGIN"); err != nil {
+			return c.Base().ErrorHelper.Errorf(adbc.StatusInternal, "BEGIN failed: %v", err)
+		}
+		c.activeTransaction = true
+	}
+	return nil
+}
+
+// Commit commits the current transaction. It is only invoked when autocommit
+// is disabled (the driverbase wrapper short-circuits to StatusInvalidState
+// otherwise). After COMMIT a new transaction is immediately begun so the
+// next statement continues to run inside a transaction until the caller
+// re-enables autocommit (chained-transaction semantics, matching the
+// Snowflake driver's pattern).
+func (c *mysqlConnectionImpl) Commit(ctx context.Context) error {
+	if _, err := c.Conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return c.Base().ErrorHelper.Errorf(adbc.StatusInternal, "COMMIT failed: %v", err)
+	}
+	if _, err := c.Conn.ExecContext(ctx, "BEGIN"); err != nil {
+		return c.Base().ErrorHelper.Errorf(adbc.StatusInternal, "BEGIN failed: %v", err)
+	}
+	return nil
+}
+
+// Rollback rolls back the current transaction. Like Commit, it begins a new
+// transaction immediately afterwards (chained-transaction semantics).
+func (c *mysqlConnectionImpl) Rollback(ctx context.Context) error {
+	if _, err := c.Conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		return c.Base().ErrorHelper.Errorf(adbc.StatusInternal, "ROLLBACK failed: %v", err)
+	}
+	if _, err := c.Conn.ExecContext(ctx, "BEGIN"); err != nil {
+		return c.Base().ErrorHelper.Errorf(adbc.StatusInternal, "BEGIN failed: %v", err)
+	}
+	return nil
 }
 
 type mysqlDatabase struct {
@@ -518,6 +618,8 @@ func (c *mysqlConnectionImpl) GetOption(ctx context.Context, key string) (string
 	switch key {
 	case OptionKeyZeroDatetimeBehavior:
 		return c.zeroDatetimeBehavior.String(), nil
+	case adbc.OptionKeyIsolationLevel:
+		return string(c.currentIsolationLevel), nil
 	default:
 		return c.ConnectionImplBase.GetOption(ctx, key)
 	}
@@ -531,6 +633,17 @@ func (c *mysqlConnectionImpl) SetOption(ctx context.Context, key, value string) 
 			return err
 		}
 		c.zeroDatetimeBehavior = behavior
+		return nil
+	case adbc.OptionKeyIsolationLevel:
+		level := adbc.OptionIsolationLevel(value)
+		stmt, err := mysqlIsolationLevelStatement(level)
+		if err != nil {
+			return err
+		}
+		if _, err := c.Conn.ExecContext(ctx, stmt); err != nil {
+			return c.Base().ErrorHelper.Errorf(adbc.StatusInternal, "set isolation level failed: %v", err)
+		}
+		c.currentIsolationLevel = level
 		return nil
 	default:
 		return c.ConnectionImplBase.SetOption(ctx, key, value)

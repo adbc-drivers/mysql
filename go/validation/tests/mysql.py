@@ -27,7 +27,7 @@ class MySQLQuirks(model.DriverQuirks):
     short_version = "9.7"
     features = model.DriverFeatures(
         connection_get_table_schema=True,
-        connection_transactions=False,
+        connection_transactions=True,
         get_objects=True,
         get_objects_constraints_foreign=False,
         get_objects_constraints_primary=False,
