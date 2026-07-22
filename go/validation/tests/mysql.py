@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import functools
+import re
 from pathlib import Path
 
 from adbc_drivers_validation import model, quirks
@@ -111,11 +112,49 @@ class MariaDBQuirks(MySQLQuirks):
         )
 
 
+class DatabendQuirks(MySQLQuirks):
+    name = "databend"
+    vendor_version = re.compile(r".+")
+    short_version = "12.2"
+    # Databend's MySQL wire protocol does not support prepared statements,
+    # so bind-based validation cases must be skipped. The current driver also
+    # uses prepared/parameterized statements for table schema lookup and bulk
+    # ingest, and the shared GetObjects fixtures depend on ingest for setup, so
+    # those capabilities have to be disabled in validation too.
+    features = MySQLQuirks.features.with_values(
+        connection_get_table_schema=False,
+        get_objects=False,
+        statement_bind=False,
+        statement_bulk_ingest=False,
+        statement_bulk_ingest_temporary=False,
+        statement_execute_schema=False,
+        statement_prepare=False,
+        statement_rows_affected=False,
+        statement_rows_affected_ddl=False,
+        current_catalog="default",
+    )
+
+    setup = model.DriverSetup(
+        database={
+            "uri": model.FromEnv("DATABEND_DSN"),
+            "mysql.vendor": "databend",
+        },
+        connection={},
+        statement={},
+    )
+
+    @property
+    def queries_paths(self) -> tuple[Path]:
+        return (Path(__file__).parent.parent / "queries/databend",)
+
+
 @functools.cache
 def get_quirks(test_config: str) -> model.DriverQuirks:
     if test_config == "mysql":
         return MySQLQuirks()
     elif test_config == "mariadb":
         return MariaDBQuirks()
+    elif test_config == "databend":
+        return DatabendQuirks()
     else:
         raise ValueError(f"unsupported test config: {test_config}")
