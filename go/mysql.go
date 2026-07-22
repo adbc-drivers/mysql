@@ -38,9 +38,8 @@ const (
 	OptionKeyVendor               = "mysql.vendor"
 	OptionKeyZeroDatetimeBehavior = "mysql.query.zero_datetime_behavior"
 
-	OptionValueVendorMySQL    = "mysql"
-	OptionValueVendorMariaDB  = "mariadb"
-	OptionValueVendorDatabend = "databend"
+	OptionValueVendorMySQL   = "mysql"
+	OptionValueVendorMariaDB = "mariadb"
 
 	OptionValueZeroDatetimeBehaviorError         = "error"
 	OptionValueZeroDatetimeBehaviorConvertToNull = "convert_to_null"
