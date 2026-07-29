@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import functools
+import re
 from pathlib import Path
 
 from adbc_drivers_validation import model, quirks
@@ -23,7 +24,7 @@ class MySQLQuirks(model.DriverQuirks):
     driver = "adbc_driver_mysql"
     driver_name = "ADBC Driver Foundry Driver for MySQL"
     vendor_name = "MySQL"
-    vendor_version = "9.7.1 (MySQL Community Server - GPL)"
+    vendor_version = re.compile(r"9\.7\.[0-9] \(MySQL Community Server - GPL\)")
     short_version = "9.7"
     features = model.DriverFeatures(
         connection_get_table_schema=True,

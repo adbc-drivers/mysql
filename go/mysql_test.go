@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -260,7 +261,7 @@ func (q *MySQLQuirks) GetMetadata(code adbc.InfoCode) any {
 	case adbc.InfoDriverArrowVersion:
 		return "(unknown or development build)"
 	case adbc.InfoVendorVersion:
-		return "9.7.1 (MySQL Community Server - GPL)"
+		return regexp.MustCompile(`9\.7\.[0-9] \(MySQL Community Server - GPL\)`)
 	case adbc.InfoVendorArrowVersion:
 		return "(unknown or development build)"
 	case adbc.InfoDriverADBCVersion:
