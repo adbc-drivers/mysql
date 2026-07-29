@@ -16,6 +16,7 @@ package mysql
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/go-sql-driver/mysql"
@@ -42,6 +43,8 @@ func (m MySQLErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 		case 1050: // ER_TABLE_EXISTS_ERROR
 			status = adbc.StatusAlreadyExists
 		case 1007: // ER_DB_CREATE_EXISTS
+			status = adbc.StatusAlreadyExists
+		case 1136: // ER_WRONG_VALUE_COUNT_ON_ROW
 			status = adbc.StatusAlreadyExists
 		case 1062: // ER_DUP_ENTRY
 			status = adbc.StatusIntegrity
@@ -101,6 +104,11 @@ func (m MySQLErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 			case "58": // System error
 				status = adbc.StatusInternal
 			}
+		}
+
+		message := strings.ToLower(mysqlErr.Message)
+		if strings.Contains(message, "not supported") || strings.Contains(message, "not support") {
+			status = adbc.StatusNotImplemented
 		}
 	}
 

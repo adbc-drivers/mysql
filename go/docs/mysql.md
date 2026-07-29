@@ -115,6 +115,11 @@ Examples:
 
   Control what to do with DATE and TIMESTAMP values that contain zero components in the date (e.g. `0000-00-00`), which MySQL allows for backwards compatibility. By default, this will error; `convert_to_null` will instead treat these values as equivalent to null.
 
+`mysql.vendor`
+: **Values:** `mysql`, `mariadb`, `databend`, or another backend identifier. **Default:** `mysql`.
+
+  Controls whether the driver injects MySQL's UTC session timezone parameter into the DSN. Leave this unset for MySQL and MariaDB to use MySQL's `time_zone`. Other non-MySQL backends, including Databend, still get UTC client-side timestamp parsing, but no session timezone parameter is injected.
+
 ## Compatibility
 
 {{ compatibility_info|safe }}

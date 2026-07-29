@@ -28,9 +28,17 @@
    # OR
    export MYSQL_DSN="mysql://my:password@localhost:3306/db"
    ```
-3. Run the tests:
+
+   Alternate targets:
 
    ```shell
-   cd validation
-   pixi run test
+   export MARIADB_DSN="my:password@tcp(localhost:3307)/db"
+   export DATABEND_DSN="root@tcp(localhost:3308)/default"
+   ```
+3. Run the validation suite:
+
+   ```shell
+   pixi run validate --vendor-version mysql
+   pixi run validate --vendor-version mariadb
+   pixi run validate --vendor-version databend
    ```
