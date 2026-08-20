@@ -259,7 +259,7 @@ func (q *MySQLQuirks) GetMetadata(code adbc.InfoCode) any {
 	case adbc.InfoDriverVersion:
 		return "(unknown or development build)"
 	case adbc.InfoDriverArrowVersion:
-		return "(unknown or development build)"
+		return "v18.7.0"
 	case adbc.InfoVendorVersion:
 		return regexp.MustCompile(`9\.7\.[0-9] \(MySQL Community Server - GPL\)`)
 	case adbc.InfoVendorArrowVersion:

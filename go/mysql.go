@@ -95,7 +95,7 @@ type mySQLTypeConverter struct {
 
 func makeTypeConverter(zeroDatetimeBehavior zeroDatetimeBehavior) sqlwrapper.TypeConverter {
 	return &mySQLTypeConverter{
-		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: "MySQL"},
+		VendorName:           "MySQL",
 		zeroDatetimeBehavior: zeroDatetimeBehavior,
 	}
 }
