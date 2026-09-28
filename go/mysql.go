@@ -556,6 +556,11 @@ func (s *mysqlStatement) GetOption(ctx context.Context, key string) (string, err
 
 func (s *mysqlStatement) SetOption(ctx context.Context, key, value string) error {
 	switch key {
+	case adbc.OptionValueIngestTargetDBSchema:
+		if value != "" {
+			return s.Base().ErrorHelper.InvalidArgument("specify the target MySQL database as the catalog via %s", adbc.OptionValueIngestTargetCatalog)
+		}
+		return s.StatementImplBase.SetOption(ctx, key, value)
 	case OptionKeyZeroDatetimeBehavior:
 		behavior, err := parseZeroDatetimeBehavior(value, &s.Base().ErrorHelper)
 		if err != nil {

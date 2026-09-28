@@ -274,7 +274,13 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 			numCols, MySQLMaxPlaceholders)
 	}
 
-	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
+	nameParts := make([]string, 0, 2)
+	if options.CatalogName != "" {
+		nameParts = append(nameParts, options.CatalogName)
+	}
+	nameParts = append(nameParts, options.TableName)
+	quotedTableName := c.QuoteIdentifiers(nameParts)
+	if err := c.createTableIfNeeded(ctx, conn, quotedTableName, schema, options); err != nil {
 		return -1, c.ErrorHelper.WrapIO(err, "failed to create table")
 	}
 
@@ -294,20 +300,20 @@ func (c *mysqlConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 }
 
 // createTableIfNeeded creates the table based on the ingest mode
-func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
+func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, quotedTableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
 	switch options.Mode {
 	case adbc.OptionValueIngestModeCreate:
 		// Create the table (fail if exists)
-		return c.createTable(ctx, conn, tableName, schema, false, options.Temporary)
+		return c.createTable(ctx, conn, quotedTableName, schema, false, options.Temporary)
 	case adbc.OptionValueIngestModeCreateAppend:
 		// Create the table if it doesn't exist
-		return c.createTable(ctx, conn, tableName, schema, true, options.Temporary)
+		return c.createTable(ctx, conn, quotedTableName, schema, true, options.Temporary)
 	case adbc.OptionValueIngestModeReplace:
 		// Drop and recreate the table
-		if err := c.dropTable(ctx, conn, tableName, options.Temporary); err != nil {
+		if err := c.dropTable(ctx, conn, quotedTableName, options.Temporary); err != nil {
 			return err
 		}
-		return c.createTable(ctx, conn, tableName, schema, false, options.Temporary)
+		return c.createTable(ctx, conn, quotedTableName, schema, false, options.Temporary)
 	case adbc.OptionValueIngestModeAppend:
 		// Table should already exist, do nothing
 		return nil
@@ -317,7 +323,7 @@ func (c *mysqlConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 }
 
 // createTable creates a MySQL table from Arrow schema
-func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool, temporary bool) error {
+func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, quotedTableName string, schema *arrow.Schema, ifNotExists bool, temporary bool) error {
 	var queryBuilder strings.Builder
 	if temporary {
 		queryBuilder.WriteString("CREATE TEMPORARY TABLE ")
@@ -327,7 +333,7 @@ func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 	if ifNotExists {
 		queryBuilder.WriteString("IF NOT EXISTS ")
 	}
-	queryBuilder.WriteString(quoteIdentifier(tableName))
+	queryBuilder.WriteString(quotedTableName)
 	queryBuilder.WriteString(" (")
 
 	for i, field := range schema.Fields() {
@@ -350,12 +356,12 @@ func (c *mysqlConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 }
 
 // dropTable drops a MySQL table
-func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, temporary bool) error {
+func (c *mysqlConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, quotedTableName string, temporary bool) error {
 	keyword := "TABLE"
 	if temporary {
 		keyword = "TEMPORARY TABLE"
 	}
-	dropSQL := fmt.Sprintf("DROP %s IF EXISTS %s", keyword, quoteIdentifier(tableName))
+	dropSQL := fmt.Sprintf("DROP %s IF EXISTS %s", keyword, quotedTableName)
 	_, err := conn.ExecContext(ctx, dropSQL)
 	return err
 }
