@@ -81,6 +81,8 @@ class MySQLQuirks(model.DriverQuirks):
     def query_override(self, context: str, default: str) -> str:
         if context == "TestStatement.sample_table":
             return "CREATE TABLE `sample_table` (id INT, value TEXT)"
+        if context == "TestConnection.test_get_table_schema_catalog":
+            return default.replace("VARCHAR", "VARCHAR(255)")
         return super().query_override(context, default)
 
     def quote_one_identifier(self, identifier: str) -> str:
