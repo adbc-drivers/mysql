@@ -104,6 +104,10 @@ Examples:
 
 {{ features|safe }}
 
+### Catalog and Schema Support
+
+MySQL only has databases. The driver treats MySQL databases as catalogs and leaves schemas empty. To explicitly specify the database name when querying the catalog, bulk ingesting, or in other operations, pass it as the ADBC catalog.
+
 ### Types
 
 {{ types|safe }}

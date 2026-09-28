@@ -35,7 +35,7 @@ class MySQLQuirks(model.DriverQuirks):
         get_objects_constraints_unique=False,
         statement_bind=True,
         statement_bulk_ingest=True,
-        statement_bulk_ingest_catalog=False,
+        statement_bulk_ingest_catalog=True,
         statement_bulk_ingest_schema=False,
         statement_bulk_ingest_temporary=True,
         statement_execute_schema=True,
@@ -46,6 +46,8 @@ class MySQLQuirks(model.DriverQuirks):
         quirk_bulk_ingest_temporary_shares_namespace=True,
         current_catalog="db",  # MySQL treats databases as catalogs (also JDBC behavior)
         current_schema="",  # getSchemas() returns empty - no schema concept (also JDBC behavior)
+        secondary_catalog="secondary",
+        secondary_catalog_schema="",
         supported_xdbc_fields=[],
     )
     setup = model.DriverSetup(
@@ -126,6 +128,7 @@ class DatabendQuirks(MySQLQuirks):
         get_objects=False,
         statement_bind=False,
         statement_bulk_ingest=False,
+        statement_bulk_ingest_catalog=False,
         statement_bulk_ingest_temporary=False,
         statement_execute_schema=False,
         statement_prepare=False,
