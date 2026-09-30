@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025-2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import adbc_drivers_validation.tests.ingest
+import pytest
 
 from . import mysql
 
@@ -23,4 +24,10 @@ def pytest_generate_tests(metafunc) -> None:
 
 
 class TestIngest(adbc_drivers_validation.tests.ingest.TestIngest):
-    pass
+    def test_temporary_get_objects(self, driver, conn_factory, query) -> None:
+        if driver.vendor_name == "MySQL":
+            pytest.xfail(
+                reason="MySQL INFORMATION_SCHEMA.TABLES does not list temporary tables: "
+                "https://dev.mysql.com/doc/refman/9.7/en/information-schema-tables-table.html"
+            )
+        super().test_temporary_get_objects(driver, conn_factory, query)

@@ -92,8 +92,8 @@ class MySQLQuirks(model.DriverQuirks):
     def split_statement(self, statement: str) -> list[str]:
         return quirks.split_statement(statement)
 
-    def qualify_temp_table(self, _cursor, name: str) -> str:
-        return name
+    def qualify_temp_table(self, _cursor, name: str) -> list[str]:
+        return [name]
 
 
 class MariaDBQuirks(MySQLQuirks):
