@@ -1,4 +1,4 @@
-// Copyright (c) 2025 ADBC Drivers Contributors
+// Copyright (c) 2025-2026 ADBC Drivers Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,7 +27,8 @@ import (
 
 // GetObjects implements adbc.Connection by running a single query on the
 // session connection (c.Conn) so that session-scoped objects like temporary
-// tables are visible in the results.
+// tables are visible in the results. (Though MySQL doesn't include temp
+// tables in INFORMATION_SCHEMA regardless.)
 //
 // The query joins SCHEMATA, a synthetic schema subquery, TABLES, and COLUMNS.
 // Levels beyond the requested depth are disabled with AND 1=0 in the join
