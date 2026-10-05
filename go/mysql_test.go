@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"strings"
@@ -806,6 +807,58 @@ func (s *MySQLTestSuite) TestBulkIngestManyColumns() {
 	s.Require().True(rdr.Next())
 	count := rdr.RecordBatch().Column(0).(*array.Int64).Value(0)
 	s.EqualValues(numRows, count)
+}
+
+func (s *MySQLTestSuite) TestUnsignedBigintPrepared() {
+	// With a prepared statement, go-sql-driver/mysql uses the binary protocol
+	// and returns BIGINT UNSIGNED values above math.MaxInt64 as []byte
+	for _, testCase := range []struct {
+		name     string
+		query    string
+		expected []uint64
+	}{
+		{
+			name:     "max_int64",
+			query:    "SELECT CAST(9223372036854775807 AS UNSIGNED) AS value",
+			expected: []uint64{math.MaxInt64},
+		},
+		{
+			name:     "above_max_int64",
+			query:    "SELECT CAST(9223372036854775808 AS UNSIGNED) AS value",
+			expected: []uint64{math.MaxInt64 + 1},
+		},
+		{
+			name:     "max_uint64",
+			query:    "SELECT CAST(18446744073709551615 AS UNSIGNED) AS value",
+			expected: []uint64{math.MaxUint64},
+		},
+		{
+			name:     "bitwise_not",
+			query:    "SELECT ~2 AS value",
+			expected: []uint64{math.MaxUint64 - 2},
+		},
+	} {
+		s.Run(testCase.name, func() {
+			stmt, err := s.cnxn.NewStatement(s.ctx)
+			s.Require().NoError(err)
+			defer func() { s.NoError(stmt.Close(s.ctx)) }()
+
+			s.Require().NoError(stmt.SetSqlQuery(s.ctx, testCase.query))
+			s.Require().NoError(stmt.Prepare(s.ctx))
+
+			rdr, _, err := stmt.ExecuteQuery(s.ctx)
+			s.Require().NoError(err)
+			defer rdr.Release()
+
+			s.Require().Truef(rdr.Next(), "no record, error? %s", rdr.Err())
+			col, ok := rdr.RecordBatch().Column(0).(*array.Uint64)
+			s.Require().Truef(ok, "expected uint64 column, got %s", rdr.RecordBatch().Column(0).DataType())
+			s.Equal(testCase.expected, col.Uint64Values())
+
+			s.False(rdr.Next())
+			s.NoError(rdr.Err())
+		})
+	}
 }
 
 func (s *MySQLTestSuite) TestZeroDatetimeBehaviorOptions() {

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -240,6 +241,15 @@ func (m *mySQLTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 			defaultInserter:      defaultInserter,
 			zeroDatetimeBehavior: m.zeroDatetimeBehavior,
 		}, nil
+	case *arrow.Uint64Type:
+		defaultInserter, err := m.DefaultTypeConverter.CreateInserter(field, builder)
+		if err != nil {
+			return nil, err
+		}
+		return &mysqlUint64Inserter{
+			builder:         builder.(*array.Uint64Builder),
+			defaultInserter: defaultInserter,
+		}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
@@ -302,6 +312,27 @@ func (ins *mysqlSpatialInserter) AppendValue(sqlValue any) error {
 	}
 
 	ins.builder.Append(t)
+	return nil
+}
+
+// mysqlUint64Inserter handles BIGINT UNSIGNED values above math.MaxInt64, which
+// go-sql-driver/mysql returns as []byte when using the binary protocol
+type mysqlUint64Inserter struct {
+	builder         *array.Uint64Builder
+	defaultInserter sqlwrapper.Inserter
+}
+
+func (ins *mysqlUint64Inserter) AppendValue(sqlValue any) error {
+	t, ok := sqlValue.([]byte)
+	if !ok {
+		return ins.defaultInserter.AppendValue(sqlValue)
+	}
+
+	parsed, err := strconv.ParseUint(string(t), 10, 64)
+	if err != nil {
+		return fmt.Errorf("cannot convert %q to uint64: %w", t, err)
+	}
+	ins.builder.Append(parsed)
 	return nil
 }
 
