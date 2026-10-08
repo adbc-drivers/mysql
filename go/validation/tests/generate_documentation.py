@@ -16,8 +16,7 @@ import argparse
 import functools
 from pathlib import Path
 
-import adbc_drivers_validation.generate_documentation as generate_documentation
-import adbc_drivers_validation.model as model
+from adbc_drivers_validation import generate_documentation, model
 
 from . import mysql
 
