@@ -18,8 +18,10 @@ import pytest
 
 def test_package() -> None:
     uri = "my:password@tcp(localhost:3306)/db"
-    with pytest.raises(
-        adbc_driver_manager.dbapi.OperationalError, match="failed to ping database"
+    with (
+        pytest.raises(
+            adbc_driver_manager.dbapi.OperationalError, match="failed to ping database"
+        ),
+        adbc_driver_manager.dbapi.connect(driver="mysql", uri=uri),
     ):
-        with adbc_driver_manager.dbapi.connect(driver="mysql", uri=uri):
-            pass
+        pass

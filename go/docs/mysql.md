@@ -39,10 +39,7 @@ To connect, edit the `uri` option below to match your environment and run the fo
 from adbc_driver_manager import dbapi
 
 conn = dbapi.connect(
-  driver="mysql",
-  db_kwargs = {
-    "uri": "mysql://root@localhost:3306/demo"
-  }
+    driver="mysql", db_kwargs={"uri": "mysql://root@localhost:3306/demo"}
 )
 ```
 

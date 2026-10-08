@@ -31,12 +31,14 @@ def test_userpass_uri(
     netloc = f"{username}:{password}@{parsed.netloc}"
     auth_uri = urllib.parse.urlunparse((parsed[0], netloc, *parsed[2:]))
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": auth_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": auth_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
 
 
 def test_userpass_options(
@@ -52,12 +54,14 @@ def test_userpass_options(
         "username": username,
         "password": password,
     }
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs=params,
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs=params,
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
 
 
 def test_userpass_options_override_uri(
@@ -75,12 +79,14 @@ def test_userpass_options_override_uri(
         "password": "this_password_is_bad",
     }
 
-    with pytest.raises(
-        adbc_driver_manager.dbapi.ProgrammingError,
-        match="Access denied for user 'this_user_is_bad'",
+    with (
+        pytest.raises(
+            adbc_driver_manager.dbapi.ProgrammingError,
+            match="Access denied for user 'this_user_is_bad'",
+        ),
+        adbc_driver_manager.dbapi.connect(driver=driver_path, db_kwargs=params),
     ):
-        with adbc_driver_manager.dbapi.connect(driver=driver_path, db_kwargs=params):
-            pass
+        pass
 
 
 @pytest.mark.parametrize(
@@ -111,20 +117,22 @@ def test_ssl_modes(
         (parsed.scheme, netloc, parsed.path, parsed.params, query, parsed.fragment)
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": ssl_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SHOW STATUS LIKE 'Ssl_cipher'")
-            result = cursor.fetchone()
-            assert result, "Could not get SSL status"
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": ssl_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SHOW STATUS LIKE 'Ssl_cipher'")
+        result = cursor.fetchone()
+        assert result, "Could not get SSL status"
 
-            cipher = result[1]
-            if expect_encrypted:
-                assert cipher, "Ssl_cipher is empty, connection is NOT encrypted"
-            else:
-                assert not cipher, "Ssl_cipher is not empty, connection IS encrypted"
+        cipher = result[1]
+        if expect_encrypted:
+            assert cipher, "Ssl_cipher is empty, connection is NOT encrypted"
+        else:
+            assert not cipher, "Ssl_cipher is not empty, connection IS encrypted"
 
 
 def test_uri_default_port(
@@ -139,13 +147,15 @@ def test_uri_default_port(
 
     no_port_uri = f"mysql://{username}:{password}@{mysql_host}/{mysql_database}"
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": no_port_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": no_port_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        assert cursor.fetchone()[0] == 1
 
 
 def test_uri_missing_host_error(
@@ -159,15 +169,17 @@ def test_uri_missing_host_error(
 
     no_host_uri = f"mysql://{username}:{password}@/{mysql_database}"
 
-    with pytest.raises(
-        adbc_driver_manager.dbapi.ProgrammingError,
-        match="missing hostname in URI",
-    ):
-        with adbc_driver_manager.dbapi.connect(
+    with (
+        pytest.raises(
+            adbc_driver_manager.dbapi.ProgrammingError,
+            match="missing hostname in URI",
+        ),
+        adbc_driver_manager.dbapi.connect(
             driver=driver_path,
             db_kwargs={"uri": no_host_uri},
-        ):
-            pass
+        ),
+    ):
+        pass
 
 
 def test_charset_selection_in_uri(
@@ -192,15 +204,17 @@ def test_charset_selection_in_uri(
         )
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": charset_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SHOW VARIABLES LIKE 'character_set_client'")
-            result = cursor.fetchone()
-            assert result
-            assert result[1] == "utf8mb4"
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": charset_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SHOW VARIABLES LIKE 'character_set_client'")
+        result = cursor.fetchone()
+        assert result
+        assert result[1] == "utf8mb4"
 
 
 def test_missing_uri_raises_error(
@@ -208,15 +222,17 @@ def test_missing_uri_raises_error(
     driver_path: str,
 ) -> None:
     """Tests that connecting without a 'uri' option raises an error."""
-    with pytest.raises(
-        adbc_driver_manager.dbapi.ProgrammingError,
-        match="missing required option uri",
-    ):
-        with adbc_driver_manager.dbapi.connect(
+    with (
+        pytest.raises(
+            adbc_driver_manager.dbapi.ProgrammingError,
+            match="missing required option uri",
+        ),
+        adbc_driver_manager.dbapi.connect(
             driver=driver_path,
             db_kwargs={},
-        ):
-            pass
+        ),
+    ):
+        pass
 
 
 def test_invalid_uri_format(
@@ -224,15 +240,17 @@ def test_invalid_uri_format(
     driver_path: str,
 ) -> None:
     """Tests that a malformed URI raises a helpful error."""
-    with pytest.raises(
-        adbc_driver_manager.dbapi.ProgrammingError,
-        match="invalid MySQL URI format",
-    ):
-        with adbc_driver_manager.dbapi.connect(
+    with (
+        pytest.raises(
+            adbc_driver_manager.dbapi.ProgrammingError,
+            match="invalid MySQL URI format",
+        ),
+        adbc_driver_manager.dbapi.connect(
             driver=driver_path,
             db_kwargs={"uri": "mysql://[invalid-format"},
-        ):
-            pass
+        ),
+    ):
+        pass
 
 
 def test_unix_socket_parentheses(
@@ -246,13 +264,15 @@ def test_unix_socket_parentheses(
 
     socket_uri = f"mysql://{username}:{password}@({mysql_socket_path})/db"
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": socket_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": socket_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        assert cursor.fetchone()[0] == 1
 
 
 # --- DSN tests ---
@@ -264,14 +284,16 @@ def test_basic_dsn_connection(
     dsn: str,  # Example: my:password@tcp(localhost:3306)/db
 ) -> None:
     """Test basic connection to MySQL using DSN format."""
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": dsn},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            result = cursor.fetchone()
-            assert result[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": dsn},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        assert result[0] == 1
 
 
 def test_minimal_dsn_with_creds(
@@ -287,18 +309,20 @@ def test_minimal_dsn_with_creds(
 
     minimal_uri = f"{username}:{password}@/"
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": minimal_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            result = cursor.fetchone()
-            assert result[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": minimal_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        assert result[0] == 1
 
-            cursor.execute("SELECT DATABASE()")
-            result = cursor.fetchone()
-            assert result[0] is None
+        cursor.execute("SELECT DATABASE()")
+        result = cursor.fetchone()
+        assert result[0] is None
 
 
 def test_plain_host_with_creds_options(
@@ -312,13 +336,15 @@ def test_plain_host_with_creds_options(
     """
     username, password = creds
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": "localhost", "username": username, "password": password},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": "localhost", "username": username, "password": password},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        assert cursor.fetchone()[0] == 1
 
 
 def test_native_dsn_options_override(
@@ -336,12 +362,14 @@ def test_native_dsn_options_override(
         "password": "this_password_is_bad",
     }
 
-    with pytest.raises(
-        adbc_driver_manager.dbapi.ProgrammingError,
-        match="Access denied for user 'this_user_is_bad'",
+    with (
+        pytest.raises(
+            adbc_driver_manager.dbapi.ProgrammingError,
+            match="Access denied for user 'this_user_is_bad'",
+        ),
+        adbc_driver_manager.dbapi.connect(driver=driver_path, db_kwargs=params),
     ):
-        with adbc_driver_manager.dbapi.connect(driver=driver_path, db_kwargs=params):
-            pass
+        pass
 
 
 def test_unix_socket_dsn(
@@ -355,10 +383,12 @@ def test_unix_socket_dsn(
 
     socket_dsn = f"{username}:{password}@unix({mysql_socket_path})/db"
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": socket_dsn},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": socket_dsn},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        assert cursor.fetchone()[0] == 1
