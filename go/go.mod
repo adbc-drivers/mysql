@@ -14,11 +14,11 @@
 
 module github.com/adbc-drivers/mysql
 
-go 1.27.1
+go 1.27.2
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260918204134-e2d9003fac22
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260918204134-e2d9003fac22
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20261008155521-bb49cea59efb
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20261008155521-bb49cea59efb
 	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260817015335-4ff17728aee2
 	github.com/apache/arrow-adbc/go/adbc v1.12.0
 	github.com/apache/arrow-go/v18 v18.8.0
@@ -59,10 +59,10 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20261007192929-f45ad48fbe92 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
