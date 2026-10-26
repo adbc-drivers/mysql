@@ -1,0 +1,51 @@
+# Copyright (c) 2026 ADBC Drivers Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Substrait dialect (https://github.com/substrait-io/substrait/blob/main/text/dialect_schema.yaml)
+# describing the plans the driver's Substrait-to-SQL translator (substrait.go)
+# accepts. Keep it in sync with the translator.
+#
+# Only a ReadRel over a NamedTable is supported, with emit but without
+# filters or a projection. The translator uses no expressions, but the schema
+# treats an empty or missing supported_expressions as "all expressions", so it
+# can't be declared here; plans with ReadRel filters are rejected with
+# ADBC_STATUS_NOT_IMPLEMENTED. Types only describe base_schema columns: there
+# are no literals, and nested (struct, list and map) columns are not supported.
+
+name: "ADBC MySQL Driver"
+supported_types:
+- "BOOL"
+- "I8"
+- "I16"
+- "I32"
+- "I64"
+- "FP32"
+- "FP64"
+- "BINARY"
+- "FIXED_BINARY"
+- "STRING"
+- "VARCHAR"
+- "FIXED_CHAR"
+- "DECIMAL"
+- "DATE"
+- type: "PRECISION_TIME"
+  max_precision: 6
+- type: "PRECISION_TIMESTAMP"
+  max_precision: 6
+- type: "PRECISION_TIMESTAMP_TZ"
+  max_precision: 6
+supported_relations:
+- relation: "READ"
+  read_types:
+  - "NAMED_TABLE"
