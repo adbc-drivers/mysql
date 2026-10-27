@@ -17,6 +17,7 @@ package mysql
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	substraitpb "github.com/substrait-io/substrait-protobuf/go/substraitpb"
@@ -50,9 +51,10 @@ func substraitToSQL(serialized []byte) (string, error) {
 }
 
 // selectQuery is the SQL form of a relation: a single-table SELECT whose
-// output columns reference the table's columns.
+// output columns reference the table's columns. Identifiers are stored
+// unquoted; toSQL quotes them.
 type selectQuery struct {
-	from    string
+	table   []string
 	columns []string
 }
 
@@ -64,12 +66,17 @@ func (q *selectQuery) toSQL(names []string) string {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(col)
+		sb.WriteString(quoteIdentifier(col))
 		sb.WriteString(" AS ")
 		sb.WriteString(quoteIdentifier(names[i]))
 	}
 	sb.WriteString(" FROM ")
-	sb.WriteString(q.from)
+	for i, part := range q.table {
+		if i > 0 {
+			sb.WriteString(".")
+		}
+		sb.WriteString(quoteIdentifier(part))
+	}
 	return sb.String()
 }
 
@@ -157,8 +164,7 @@ func readRelToQuery(read *substraitpb.ReadRel) (*selectQuery, error) {
 	if namedTable.GetAdvancedExtension().GetEnhancement() != nil {
 		return nil, substraitUnsupported("NamedTable advanced extension enhancements")
 	}
-	tableName, err := namedTableToSQL(namedTable.GetNames())
-	if err != nil {
+	if err := checkNamedTable(namedTable.GetNames()); err != nil {
 		return nil, err
 	}
 
@@ -166,31 +172,27 @@ func readRelToQuery(read *substraitpb.ReadRel) (*selectQuery, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := &selectQuery{from: tableName, columns: columns}
+	q := &selectQuery{table: namedTable.GetNames(), columns: columns}
 	return q, applyEmit(q, read.GetCommon())
 }
 
-// namedTableToSQL quotes a NamedTable name. MySQL databases are exposed as
+// checkNamedTable validates a NamedTable name. MySQL databases are exposed as
 // ADBC catalogs, so a name is either [table] or [database, table].
-func namedTableToSQL(names []string) (string, error) {
+func checkNamedTable(names []string) error {
 	switch len(names) {
 	case 0:
-		return "", substraitInvalid("NamedTable has no name")
+		return substraitInvalid("NamedTable has no name")
 	case 1, 2:
 	default:
-		return "", substraitUnsupported("NamedTable with %d name parts (expected [table] or [database, table])", len(names))
+		return substraitUnsupported("NamedTable with %d name parts (expected [table] or [database, table])", len(names))
 	}
-	quoted := make([]string, len(names))
-	for i, name := range names {
-		if name == "" {
-			return "", substraitInvalid("NamedTable has an empty name part")
-		}
-		quoted[i] = quoteIdentifier(name)
+	if slices.Contains(names, "") {
+		return substraitInvalid("NamedTable has an empty name part")
 	}
-	return strings.Join(quoted, "."), nil
+	return nil
 }
 
-// baseSchemaColumns returns the quoted top-level columns of a ReadRel's base
+// baseSchemaColumns returns the top-level column names of a ReadRel's base
 // schema. Nested columns are not supported, so names and types must line up
 // one-to-one: names include the fields of structs nested anywhere, including
 // inside lists and maps.
@@ -220,14 +222,10 @@ func baseSchemaColumns(schema *substraitpb.NamedStruct) ([]string, error) {
 	if len(names) == 0 {
 		return nil, substraitInvalid("base_schema has no columns")
 	}
-	columns := make([]string, len(names))
-	for i, name := range names {
-		if name == "" {
-			return nil, substraitInvalid("base_schema has an empty column name")
-		}
-		columns[i] = quoteIdentifier(name)
+	if slices.Contains(names, "") {
+		return nil, substraitInvalid("base_schema has an empty column name")
 	}
-	return columns, nil
+	return names, nil
 }
 
 // applyEmit narrows q's output columns according to RelCommon's emit
