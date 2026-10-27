@@ -14,16 +14,16 @@
 
 # Substrait dialect (https://github.com/substrait-io/substrait/blob/main/text/dialect_schema.yaml)
 # describing the plans the driver's Substrait-to-SQL translator (substrait.go)
-# accepts. Keep it in sync with the translator.
+# accepts. Restrictions a dialect can't express, such as which types can be
+# literals or compared, are documented in docs/mysql.md.
 #
-# Only a ReadRel over a NamedTable is supported, with emit but without
-# filters or a projection. The translator uses no expressions, but the schema
-# treats an empty or missing supported_expressions as "all expressions", so it
-# can't be declared here; plans with ReadRel filters are rejected with
-# ADBC_STATUS_NOT_IMPLEMENTED. Types only describe base_schema columns: there
-# are no literals, and nested (struct, list and map) columns are not supported.
+# TestSubstraitDialectTypes and TestSubstraitFunctionCases check that the
+# translator matches this file.
 
 name: "ADBC MySQL Driver"
+dependencies:
+  boolean: "extension:io.substrait:functions_boolean"
+  comparison: "extension:io.substrait:functions_comparison"
 supported_types:
 - "BOOL"
 - "I8"
@@ -37,7 +37,8 @@ supported_types:
 - "STRING"
 - "VARCHAR"
 - "FIXED_CHAR"
-- "DECIMAL"
+- type: "DECIMAL"
+  max_scale: 30
 - "DATE"
 - type: "PRECISION_TIME"
   max_precision: 6
@@ -46,6 +47,94 @@ supported_types:
 - type: "PRECISION_TIMESTAMP_TZ"
   max_precision: 6
 supported_relations:
+- "FILTER"
 - relation: "READ"
   read_types:
   - "NAMED_TABLE"
+supported_expressions:
+- "LITERAL"
+- "SELECTION"
+- "SCALAR_FUNCTION"
+supported_scalar_functions:
+- source: "comparison"
+  name: "equal"
+  supported_impls:
+  - "any_any"
+- source: "comparison"
+  name: "not_equal"
+  supported_impls:
+  - "any_any"
+- source: "comparison"
+  name: "lt"
+  supported_impls:
+  - "any_any"
+- source: "comparison"
+  name: "lte"
+  supported_impls:
+  - "any_any"
+- source: "comparison"
+  name: "gt"
+  supported_impls:
+  - "any_any"
+- source: "comparison"
+  name: "gte"
+  supported_impls:
+  - "any_any"
+- source: "comparison"
+  name: "is_distinct_from"
+  supported_impls:
+  - "any_any"
+- source: "comparison"
+  name: "is_not_distinct_from"
+  supported_impls:
+  - "any_any"
+- source: "comparison"
+  name: "between"
+  supported_impls:
+  - "any_any_any"
+- source: "comparison"
+  name: "is_null"
+  supported_impls:
+  - "any"
+- source: "comparison"
+  name: "is_not_null"
+  supported_impls:
+  - "any"
+- source: "comparison"
+  name: "is_true"
+  supported_impls:
+  - "bool"
+- source: "comparison"
+  name: "is_not_true"
+  supported_impls:
+  - "bool"
+- source: "comparison"
+  name: "is_false"
+  supported_impls:
+  - "bool"
+- source: "comparison"
+  name: "is_not_false"
+  supported_impls:
+  - "bool"
+- source: "boolean"
+  name: "and"
+  supported_impls:
+  - "bool"
+  variadic: {}
+- source: "boolean"
+  name: "or"
+  supported_impls:
+  - "bool"
+  variadic: {}
+- source: "boolean"
+  name: "and_not"
+  supported_impls:
+  - "bool_bool"
+- source: "boolean"
+  name: "xor"
+  supported_impls:
+  - "bool_bool"
+- source: "boolean"
+  name: "not"
+  supported_impls:
+  - "bool"

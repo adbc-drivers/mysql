@@ -24,7 +24,9 @@ require (
 	github.com/apache/arrow-go/v18 v18.8.0
 	github.com/go-ext/variant v1.2.4
 	github.com/go-sql-driver/mysql v1.10.1
+	github.com/goccy/go-yaml v1.17.1
 	github.com/stretchr/testify v1.12.1
+	github.com/substrait-io/substrait v0.87.0
 	github.com/substrait-io/substrait-go/v8 v8.1.1
 	github.com/substrait-io/substrait-protobuf/go v0.85.0
 	google.golang.org/protobuf v1.36.12
@@ -44,7 +46,6 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.11.2 // indirect
-	github.com/goccy/go-yaml v1.17.1 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
@@ -52,7 +53,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/pquerna/ffjson v0.0.0-20190930134022-aa0246cd15f7 // indirect
-	github.com/substrait-io/substrait v0.87.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
