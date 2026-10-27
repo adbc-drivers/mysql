@@ -105,6 +105,17 @@ Examples:
 
 MySQL only has databases. The driver treats MySQL databases as catalogs and leaves schemas empty. To explicitly specify the database name when querying the catalog, bulk ingesting, or in other operations, pass it as the ADBC catalog.
 
+### Substrait
+
+The driver accepts Substrait plans via `AdbcStatementSetSubstraitPlan` by translating them to SQL. Currently supported:
+
+- A `RelRoot` over a `ReadRel` over a `NamedTable`, whose name is either `[table]` (resolved against the current database) or `[database, table]`.
+- `RelCommon.emit` to select and reorder output columns. Output columns are renamed to the plan root's names.
+
+The column types and nullability in the `ReadRel`'s `base_schema` are not checked against the table: result types are those MySQL reports for the selected columns.
+
+Anything else, including filters, expressions and nested columns, returns `ADBC_STATUS_NOT_IMPLEMENTED`. Malformed plans return `ADBC_STATUS_INVALID_ARGUMENT`.
+
 ### Types
 
 {{ types|safe }}

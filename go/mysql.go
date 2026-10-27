@@ -538,6 +538,22 @@ func (s *mysqlStatement) MakeTypeConverter(vendorName string) sqlwrapper.TypeCon
 	return makeTypeConverter(s.zeroDatetimeBehavior)
 }
 
+// SetSubstraitPlan translates the Substrait plan into SQL and sets it as the
+// statement's query.
+func (s *mysqlStatement) SetSubstraitPlan(ctx context.Context, plan []byte) error {
+	query, err := substraitToSQL(plan)
+	if err != nil {
+		if errors.Is(err, errSubstraitUnsupported) {
+			err = s.Base().ErrorHelper.NotImplemented("%s", err)
+		} else {
+			err = s.Base().ErrorHelper.InvalidArgument("%s", err)
+		}
+		// Don't leave a previously set query behind to be executed by mistake
+		return errors.Join(err, s.SetSqlQuery(ctx, ""))
+	}
+	return s.SetSqlQuery(ctx, query)
+}
+
 func (c *mysqlConnectionImpl) NewStatement(ctx context.Context) (adbc.StatementWithContext, error) {
 	stmt, err := c.ConnectionImplBase.NewStatement(ctx)
 	if err != nil {
@@ -619,7 +635,7 @@ func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
 		adbc.InfoDriverName:                       "ADBC Driver Foundry Driver for MySQL",
 		adbc.InfoVendorSql:                        true,
-		adbc.InfoVendorSubstrait:                  false,
+		adbc.InfoVendorSubstrait:                  true,
 		adbc.InfoCode(infoSqlIdentifierQuoteChar): "`",
 	})
 	return driver
