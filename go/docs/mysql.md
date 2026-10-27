@@ -107,14 +107,20 @@ MySQL only has databases. The driver treats MySQL databases as catalogs and leav
 
 ### Substrait
 
-The driver accepts Substrait plans via `AdbcStatementSetSubstraitPlan` by translating them to SQL. Currently supported:
+The driver accepts Substrait plans via `AdbcStatementSetSubstraitPlan` by translating them to SQL. The supported relations, expressions, functions and types are listed in the driver's [Substrait dialect](https://github.com/adbc-drivers/mysql/blob/main/go/substrait_dialect.yaml). Plans that use anything else return `ADBC_STATUS_NOT_IMPLEMENTED`, and malformed plans return `ADBC_STATUS_INVALID_ARGUMENT`.
 
-- A `RelRoot` over a `ReadRel` over a `NamedTable`, whose name is either `[table]` (resolved against the current database) or `[database, table]`.
-- `RelCommon.emit` to select and reorder output columns. Output columns are renamed to the plan root's names.
+In addition, the following restrictions apply, which a dialect can't express:
 
-The column types and nullability in the `ReadRel`'s `base_schema` are not checked against the table: result types are those MySQL reports for the selected columns.
+- A plan is a `RelRoot` over `FilterRel`s over a `ReadRel` over a `NamedTable`, whose name is either `[table]` (resolved against the current database) or `[database, table]`. The `ReadRel` can't have a projection. Its `best_effort_filter` is applied in full if all of it is supported, and ignored otherwise.
+- Output column names must be unique, ignoring case.
+- Types can't have type variations.
+- Only `boolean`, `i8`, `i16`, `i32`, `i64`, `fp32` and `fp64` (except infinity and NaN), `decimal` and `date` (from 1000-01-01 to 9999-12-31) values can be literals. Null literals can have any supported type.
+- Comparisons are supported for booleans, integers, floating point numbers, decimals, dates and timestamps, and both sides must have the same type, including decimal precision and scale and timestamp precision.
 
-Anything else, including filters, expressions and nested columns, returns `ADBC_STATUS_NOT_IMPLEMENTED`. Malformed plans return `ADBC_STATUS_INVALID_ARGUMENT`.
+The column types and nullability in the `ReadRel`'s `base_schema` are not checked against the table: result types are those MySQL reports for the selected columns, and filters rely on the declared types. Filters compare the values stored in MySQL, which may differ from the declared types:
+
+- A `boolean` column is usually a `TINYINT(1)` in MySQL, which can hold values other than 0 and 1. `equal(b, true)` only matches 1, while `is_true(b)` and `not(b)` treat any non-zero value as true.
+- Zero dates (e.g. `0000-00-00`) are compared as dates before any other date, and are never NULL in filters, including with `mysql.query.zero_datetime_behavior=convert_to_null`, which only converts them to NULL in results.
 
 ### Types
 
