@@ -64,13 +64,54 @@ type sqlExpr struct {
 	notNull bool
 }
 
-// selectQuery is the SQL form of a relation: a single-table SELECT whose
-// output columns and filter predicates are expressions over the table's
-// columns. The table name is stored unquoted; toSQL quotes it.
+// selectQuery is the SQL form of a relation: a SELECT from a table or a
+// subquery, whose output columns and filter predicates are expressions over
+// the columns of what it reads. The table name is stored unquoted; toSQL
+// quotes it.
 type selectQuery struct {
-	table   []string
+	table []string
+	// from, if set, is a subquery read instead of table. Its columns are
+	// named by subqueryColumn.
+	from    *selectQuery
 	columns []sqlExpr
 	where   []string
+	// offset is the number of rows to skip, and limit the number of rows to
+	// return, or noLimit
+	offset int64
+	limit  int64
+}
+
+const noLimit = -1
+
+// maxLimit is the largest row count MySQL accepts, used to skip rows without
+// limiting the rest.
+const maxLimit = "18446744073709551615"
+
+func newSelectQuery(table []string, columns []sqlExpr) *selectQuery {
+	return &selectQuery{table: table, columns: columns, limit: noLimit}
+}
+
+// limited reports whether q has a LIMIT or OFFSET, which is applied after its
+// WHERE clause.
+func (q *selectQuery) limited() bool {
+	return q.offset > 0 || q.limit != noLimit
+}
+
+// subqueryColumn names a subquery's i-th output column. Generated names
+// keep the columns unique, as MySQL requires for subqueries, even if emit
+// repeats a column.
+func subqueryColumn(i int) string {
+	return "c" + strconv.Itoa(i)
+}
+
+// wrap returns a query that reads q as a subquery, so that filters and
+// limits can be applied after q's.
+func (q *selectQuery) wrap() *selectQuery {
+	columns := make([]sqlExpr, len(q.columns))
+	for i, col := range q.columns {
+		columns[i] = sqlExpr{sql: quoteIdentifier(subqueryColumn(i)), typ: col.typ}
+	}
+	return &selectQuery{from: q, columns: columns, limit: noLimit}
 }
 
 // toSQL renders q, aliasing each output column to the corresponding name.
@@ -86,15 +127,38 @@ func (q *selectQuery) toSQL(names []string) string {
 		sb.WriteString(quoteIdentifier(names[i]))
 	}
 	sb.WriteString(" FROM ")
-	for i, part := range q.table {
-		if i > 0 {
-			sb.WriteString(".")
+	if q.from != nil {
+		names := make([]string, len(q.from.columns))
+		for i := range names {
+			names[i] = subqueryColumn(i)
 		}
-		sb.WriteString(quoteIdentifier(part))
+		sb.WriteString("(")
+		sb.WriteString(q.from.toSQL(names))
+		sb.WriteString(") AS `sub`")
+	} else {
+		for i, part := range q.table {
+			if i > 0 {
+				sb.WriteString(".")
+			}
+			sb.WriteString(quoteIdentifier(part))
+		}
 	}
 	if len(q.where) > 0 {
 		sb.WriteString(" WHERE ")
 		sb.WriteString(strings.Join(q.where, " AND "))
+	}
+	if q.limited() {
+		sb.WriteString(" LIMIT ")
+		if q.limit == noLimit {
+			// MySQL has no OFFSET without LIMIT
+			sb.WriteString(maxLimit)
+		} else {
+			sb.WriteString(strconv.FormatInt(q.limit, 10))
+		}
+		if q.offset > 0 {
+			sb.WriteString(" OFFSET ")
+			sb.WriteString(strconv.FormatInt(q.offset, 10))
+		}
 	}
 	return sb.String()
 }
@@ -111,7 +175,7 @@ type extensionFunction struct {
 }
 
 // planToSQL translates a Substrait plan into a MySQL query. Currently only
-// FilterRels over a ReadRel over a NamedTable are supported.
+// FilterRels and FetchRels over a ReadRel over a NamedTable are supported.
 func planToSQL(plan *substraitpb.Plan) (string, error) {
 	if len(plan.GetParameterBindings()) > 0 {
 		return "", substraitUnsupported("parameter bindings")
@@ -207,6 +271,8 @@ func (t *substraitTranslator) relToQuery(rel *substraitpb.Rel) (*selectQuery, er
 		return t.readRelToQuery(r.Read)
 	case *substraitpb.Rel_Filter:
 		return t.filterRelToQuery(r.Filter)
+	case *substraitpb.Rel_Fetch:
+		return t.fetchRelToQuery(r.Fetch)
 	default:
 		return nil, substraitUnsupported("relation type %T", rel.GetRelType())
 	}
@@ -235,7 +301,7 @@ func (t *substraitTranslator) readRelToQuery(read *substraitpb.ReadRel) (*select
 	if err != nil {
 		return nil, err
 	}
-	q := &selectQuery{table: namedTable.GetNames(), columns: columns}
+	q := newSelectQuery(namedTable.GetNames(), columns)
 
 	// Both filters reference the base schema, so they are added before emit
 	// is applied
@@ -263,16 +329,136 @@ func (t *substraitTranslator) filterRelToQuery(filter *substraitpb.FilterRel) (*
 		return nil, substraitInvalid("FilterRel has no condition")
 	}
 	// A filter only drops rows, so it can be merged into its input's WHERE
-	// clause as long as the input is a plain SELECT, which is all relToQuery
-	// produces for now
+	// clause, unless the input has a LIMIT, which has to be applied first
 	q, err := t.relToQuery(filter.GetInput())
 	if err != nil {
 		return nil, err
+	}
+	if q.limited() {
+		q = q.wrap()
 	}
 	if err := t.addFilter(q, filter.GetCondition()); err != nil {
 		return nil, err
 	}
 	return q, applyEmit(q, filter.GetCommon())
+}
+
+func (t *substraitTranslator) fetchRelToQuery(fetch *substraitpb.FetchRel) (*selectQuery, error) {
+	if fetch.GetAdvancedExtension().GetEnhancement() != nil {
+		return nil, substraitUnsupported("FetchRel advanced extension enhancements")
+	}
+	offset, limit, err := fetchBounds(fetch)
+	if err != nil {
+		return nil, err
+	}
+	q, err := t.relToQuery(fetch.GetInput())
+	if err != nil {
+		return nil, err
+	}
+	if offset > 0 || limit != noLimit {
+		// Limits are only combined through a subquery, rather than by
+		// computing a combined offset and limit
+		if q.limited() {
+			q = q.wrap()
+		}
+		q.offset, q.limit = offset, limit
+	}
+	return q, applyEmit(q, fetch.GetCommon())
+}
+
+// fetchBounds returns a FetchRel's offset and its count, or noLimit if all
+// rows are returned. Only literal offsets and counts are supported, since
+// MySQL's LIMIT and OFFSET take constants.
+func fetchBounds(fetch *substraitpb.FetchRel) (offset, limit int64, err error) {
+	switch o := fetch.GetOffsetMode().(type) {
+	case nil:
+	case *substraitpb.FetchRel_Offset:
+		offset = o.Offset //nolint:staticcheck // still produced, e.g. by substrait-go
+		if offset < 0 {
+			return 0, 0, substraitInvalid("negative FetchRel offset %d", offset)
+		}
+	case *substraitpb.FetchRel_OffsetExpr:
+		// A NULL offset is treated as 0
+		if offset, err = fetchBound("offset", o.OffsetExpr, 0); err != nil {
+			return 0, 0, err
+		}
+	default:
+		return 0, 0, substraitUnsupported("FetchRel offset mode %T", o)
+	}
+
+	limit = noLimit
+	switch c := fetch.GetCountMode().(type) {
+	case nil:
+	case *substraitpb.FetchRel_Count:
+		// -1 means all rows
+		limit = c.Count //nolint:staticcheck // still produced, e.g. by substrait-go
+		if limit < noLimit {
+			return 0, 0, substraitInvalid("negative FetchRel count %d", limit)
+		}
+	case *substraitpb.FetchRel_CountExpr:
+		// A NULL count means all rows
+		if limit, err = fetchBound("count", c.CountExpr, noLimit); err != nil {
+			return 0, 0, err
+		}
+	default:
+		return 0, 0, substraitUnsupported("FetchRel count mode %T", c)
+	}
+	return offset, limit, nil
+}
+
+// fetchBound evaluates a FetchRel offset or count expression, which must be a
+// non-negative integer literal, or a NULL literal, for which it returns
+// ifNull.
+func fetchBound(name string, e *substraitpb.Expression, ifNull int64) (int64, error) {
+	lit := e.GetLiteral()
+	if lit == nil {
+		return 0, substraitUnsupported("non-literal FetchRel %s", name)
+	}
+	if lit.GetTypeVariationReference() != 0 {
+		return 0, substraitUnsupported("literals with type variations")
+	}
+	var v int64
+	switch l := lit.GetLiteralType().(type) {
+	case *substraitpb.Expression_Literal_I8:
+		// I8 and I16 literals are stored as int32
+		if l.I8 < math.MinInt8 || l.I8 > math.MaxInt8 {
+			return 0, substraitInvalid("i8 literal %d out of range", l.I8)
+		}
+		v = int64(l.I8)
+	case *substraitpb.Expression_Literal_I16:
+		if l.I16 < math.MinInt16 || l.I16 > math.MaxInt16 {
+			return 0, substraitInvalid("i16 literal %d out of range", l.I16)
+		}
+		v = int64(l.I16)
+	case *substraitpb.Expression_Literal_I32:
+		v = int64(l.I32)
+	case *substraitpb.Expression_Literal_I64:
+		v = l.I64
+	case *substraitpb.Expression_Literal_Null:
+		if l.Null.GetKind() == nil {
+			return 0, substraitInvalid("null literal has no type")
+		}
+		if err := checkSupportedType(l.Null); err != nil {
+			return 0, err
+		}
+		switch l.Null.GetKind().(type) {
+		case *substraitpb.Type_I8_, *substraitpb.Type_I16_, *substraitpb.Type_I32_, *substraitpb.Type_I64_:
+			return ifNull, nil
+		}
+		return 0, substraitInvalid("FetchRel %s must be an integer", name)
+	case *substraitpb.Expression_Literal_UserDefined_:
+		// Possibly an integer type defined in an extension
+		return 0, substraitUnsupported("user-defined literals")
+	case nil:
+		// Also covers literal types added in newer Substrait versions
+		return 0, substraitUnsupported("literal without a known type")
+	default:
+		return 0, substraitInvalid("FetchRel %s must be an integer", name)
+	}
+	if v < 0 {
+		return 0, substraitInvalid("negative FetchRel %s %d", name, v)
+	}
+	return v, nil
 }
 
 // addFilter adds a predicate over q's current output columns to q's WHERE
