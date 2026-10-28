@@ -24,7 +24,7 @@ require (
 	github.com/apache/arrow-go/v18 v18.8.0
 	github.com/go-ext/variant v1.2.4
 	github.com/go-sql-driver/mysql v1.10.1
-	github.com/goccy/go-yaml v1.17.1
+	github.com/goccy/go-yaml v1.19.2
 	github.com/stretchr/testify v1.12.1
 	github.com/substrait-io/substrait v0.87.0
 	github.com/substrait-io/substrait-go/v8 v8.1.1
