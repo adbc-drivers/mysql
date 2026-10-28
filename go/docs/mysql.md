@@ -111,7 +111,8 @@ The driver accepts Substrait plans via `AdbcStatementSetSubstraitPlan` by transl
 
 In addition, the following restrictions apply, which a dialect can't express:
 
-- A plan is a `RelRoot` over `FilterRel`s over a `ReadRel` over a `NamedTable`, whose name is either `[table]` (resolved against the current database) or `[database, table]`. The `ReadRel` can't have a projection. Its `best_effort_filter` is applied in full if all of it is supported, and ignored otherwise.
+- A plan is a `RelRoot` over any combination of `FilterRel`s and `FetchRel`s over a `ReadRel` over a `NamedTable`, whose name is either `[table]` (resolved against the current database) or `[database, table]`. The `ReadRel` can't have a projection. Its `best_effort_filter` is applied in full if all of it is supported, and ignored otherwise.
+- A `FetchRel`'s offset and count must be integer literals (or null).
 - Output column names must be unique, ignoring case.
 - Types can't have type variations.
 - Only `boolean`, `i8`, `i16`, `i32`, `i64`, `fp32` and `fp64` (except infinity and NaN), `decimal` and `date` (from 1000-01-01 to 9999-12-31) values can be literals. Null literals can have any supported type.

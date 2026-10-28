@@ -47,6 +47,7 @@ supported_types:
 - type: "PRECISION_TIMESTAMP_TZ"
   max_precision: 6
 supported_relations:
+- "FETCH"
 - "FILTER"
 - relation: "READ"
   read_types:

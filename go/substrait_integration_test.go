@@ -388,6 +388,152 @@ func (s *MySQLTestSuite) TestSubstraitFilter() {
 	}
 }
 
+func (s *MySQLTestSuite) TestSubstraitFetch() {
+	for _, query := range []string{
+		"DROP TABLE IF EXISTS substrait_fetch",
+		"CREATE TABLE substrait_fetch (id BIGINT NOT NULL PRIMARY KEY)",
+		"INSERT INTO substrait_fetch VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10)",
+	} {
+		s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, query))
+		_, err := s.stmt.ExecuteUpdate(s.ctx)
+		s.Require().NoError(err)
+	}
+	defer func() {
+		s.NoError(s.stmt.SetSqlQuery(s.ctx, "DROP TABLE substrait_fetch"))
+		_, err := s.stmt.ExecuteUpdate(s.ctx)
+		s.NoError(err)
+	}()
+
+	schema := types.NamedStruct{
+		Names: []string{"id"},
+		Struct: types.StructType{
+			Nullability: types.NullabilityRequired,
+			Types:       []types.Type{&types.Int64Type{Nullability: types.NullabilityRequired}},
+		},
+	}
+	const cmp = substraitext.SubstraitDefaultURNPrefix + "functions_comparison"
+	// filter adds a filter comparing id with v
+	filter := func(b plan.Builder, input plan.Rel, fn string, v int64) (plan.Rel, error) {
+		ref, err := b.RootFieldRef(input, 0)
+		if err != nil {
+			return nil, err
+		}
+		cond, err := b.ScalarFn(cmp, fn, nil, ref, expr.NewPrimitiveLiteral(v, false))
+		if err != nil {
+			return nil, err
+		}
+		return b.Filter(input, cond)
+	}
+
+	// Without a sort, the rows a fetch returns aren't defined; these expect
+	// MySQL to scan the table in primary key order
+	for _, tc := range []struct {
+		name     string
+		build    func(b plan.Builder, scan plan.Rel) (plan.Rel, error)
+		expected []int64
+	}{
+		{
+			name:     "limit",
+			build:    func(b plan.Builder, scan plan.Rel) (plan.Rel, error) { return b.Fetch(scan, 0, 3) },
+			expected: []int64{1, 2, 3},
+		},
+		{
+			name:     "zero_limit",
+			build:    func(b plan.Builder, scan plan.Rel) (plan.Rel, error) { return b.Fetch(scan, 0, 0) },
+			expected: []int64{},
+		},
+		{
+			name:     "offset",
+			build:    func(b plan.Builder, scan plan.Rel) (plan.Rel, error) { return b.Fetch(scan, 8, -1) },
+			expected: []int64{9, 10},
+		},
+		{
+			name:     "offset_past_end",
+			build:    func(b plan.Builder, scan plan.Rel) (plan.Rel, error) { return b.Fetch(scan, 20, 5) },
+			expected: []int64{},
+		},
+		{
+			name: "fetch_over_filter",
+			build: func(b plan.Builder, scan plan.Rel) (plan.Rel, error) {
+				f, err := filter(b, scan, "gt", 5)
+				if err != nil {
+					return nil, err
+				}
+				return b.Fetch(f, 1, 2)
+			},
+			expected: []int64{7, 8},
+		},
+		{
+			// A filter merged into the fetch's WHERE would return 3, 4 and 5
+			name: "filter_over_fetch",
+			build: func(b plan.Builder, scan plan.Rel) (plan.Rel, error) {
+				f, err := b.Fetch(scan, 0, 3)
+				if err != nil {
+					return nil, err
+				}
+				return filter(b, f, "gte", 3)
+			},
+			expected: []int64{3},
+		},
+		{
+			name: "fetch_over_fetch",
+			build: func(b plan.Builder, scan plan.Rel) (plan.Rel, error) {
+				f, err := b.Fetch(scan, 1, 5)
+				if err != nil {
+					return nil, err
+				}
+				return b.Fetch(f, 2, 10)
+			},
+			expected: []int64{4, 5, 6},
+		},
+	} {
+		s.Run(tc.name, func() {
+			b := plan.NewBuilderDefault()
+			rel, err := tc.build(b, b.NamedScan([]string{"substrait_fetch"}, schema))
+			s.Require().NoError(err)
+			p, err := b.Plan(rel, []string{"id"})
+			s.Require().NoError(err)
+
+			got, err := s.substraitIDs(s.substraitPlan(p, nil))
+			s.Require().NoError(err)
+			slices.Sort(got)
+			s.Equal(tc.expected, got)
+		})
+	}
+
+	// The subquery's columns get generated names, since emit can repeat a
+	// column, which a subquery can't have twice under the same name
+	s.Run("repeated_column_in_subquery", func() {
+		b := plan.NewBuilderDefault()
+		f, err := b.Fetch(b.NamedScan([]string{"substrait_fetch"}, schema), 0, 2)
+		s.Require().NoError(err)
+		remapped, err := f.Remap(0, 0)
+		s.Require().NoError(err)
+		rel, err := filter(b, remapped, "gte", 2)
+		s.Require().NoError(err)
+		p, err := b.Plan(rel, []string{"x", "y"})
+		s.Require().NoError(err)
+
+		stmt, err := s.cnxn.NewStatement(s.ctx)
+		s.Require().NoError(err)
+		defer func() { s.NoError(stmt.Close(s.ctx)) }()
+		s.Require().NoError(stmt.SetSubstraitPlan(s.ctx, s.substraitPlan(p, nil)))
+		schema, err := stmt.(adbc.StatementExecuteSchema).ExecuteSchema(s.ctx)
+		s.Require().NoError(err)
+		s.Equal([]string{"x", "y"}, []string{schema.Field(0).Name, schema.Field(1).Name})
+
+		rdr, _, err := stmt.ExecuteQuery(s.ctx)
+		s.Require().NoError(err)
+		defer rdr.Release()
+		s.Require().True(rdr.Next())
+		rec := rdr.RecordBatch()
+		s.Equal([]int64{2}, rec.Column(0).(*array.Int64).Int64Values())
+		s.Equal([]int64{2}, rec.Column(1).(*array.Int64).Int64Values())
+		s.False(rdr.Next())
+		s.NoError(rdr.Err())
+	})
+}
+
 // TestSubstraitZeroDate checks null tests on a NOT NULL DATE column holding
 // a zero date, which MySQL's IS NULL treats as NULL.
 func (s *MySQLTestSuite) TestSubstraitZeroDate() {

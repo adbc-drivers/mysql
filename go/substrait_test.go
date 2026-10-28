@@ -28,8 +28,10 @@ import (
 	"github.com/substrait-io/substrait-go/v8/plan"
 	"github.com/substrait-io/substrait-go/v8/types"
 	"github.com/substrait-io/substrait-protobuf/go/substraitpb"
+	extensionspb "github.com/substrait-io/substrait-protobuf/go/substraitpb/extensions"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 var testBaseSchema = types.NamedStruct{
@@ -1051,4 +1053,351 @@ func TestSubstraitDialectTypes(t *testing.T) {
 		})
 	}
 	assert.Empty(t, listed, "dialect types that aren't Type kinds")
+}
+
+// fetchPlan builds a plan over a NamedTable read of testBaseSchema, with the
+// relations added by build, and root names.
+func fetchPlan(t *testing.T, build func(f filterBuilders) (plan.Rel, error), names ...string) *substraitpb.Plan {
+	t.Helper()
+	b := plan.NewBuilderDefault()
+	rel, err := build(filterBuilders{t: t, b: b, scan: b.NamedScan([]string{"t"}, testBaseSchema)})
+	require.NoError(t, err)
+	p, err := b.Plan(rel, names)
+	require.NoError(t, err)
+	pb, err := p.ToProto()
+	require.NoError(t, err)
+	return pb
+}
+
+// fetchRemap adds a FetchRel with an emit over input.
+func fetchRemap(b plan.Builder, input plan.Rel, offset, count int64, remap ...int32) (plan.Rel, error) {
+	fetch, err := b.Fetch(input, offset, count)
+	if err != nil {
+		return nil, err
+	}
+	return fetch.Remap(remap...)
+}
+
+// literalExpr wraps a literal in an expression.
+func literalExpr(lit *substraitpb.Expression_Literal) *substraitpb.Expression {
+	return &substraitpb.Expression{RexType: &substraitpb.Expression_Literal_{Literal: lit}}
+}
+
+func TestSubstraitFetchSQL(t *testing.T) {
+	allColumns := []string{"a", "b", "c"}
+	fetch := func(offset, count int64) func(f filterBuilders) (plan.Rel, error) {
+		return func(f filterBuilders) (plan.Rel, error) { return f.b.Fetch(f.scan, offset, count) }
+	}
+	for _, tc := range []struct {
+		name     string
+		build    func(f filterBuilders) (plan.Rel, error)
+		names    []string
+		adjust   func(p *substraitpb.Plan)
+		expected string
+	}{
+		{
+			name:     "limit",
+			build:    fetch(0, 3),
+			names:    allColumns,
+			expected: "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `t` LIMIT 3",
+		},
+		{
+			name:     "zero_limit",
+			build:    fetch(0, 0),
+			names:    allColumns,
+			expected: "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `t` LIMIT 0",
+		},
+		{
+			// MySQL has no OFFSET without LIMIT
+			name:     "offset",
+			build:    fetch(2, -1),
+			names:    allColumns,
+			expected: "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `t` LIMIT 18446744073709551615 OFFSET 2",
+		},
+		{
+			name:     "limit_and_offset",
+			build:    fetch(2, 3),
+			names:    allColumns,
+			expected: "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `t` LIMIT 3 OFFSET 2",
+		},
+		{
+			name:     "all_rows",
+			build:    fetch(0, -1),
+			names:    allColumns,
+			expected: "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `t`",
+		},
+		{
+			name:  "expression_bounds",
+			build: fetch(0, -1),
+			names: allColumns,
+			adjust: func(p *substraitpb.Plan) {
+				fetch := p.GetRelations()[0].GetRoot().GetInput().GetFetch()
+				fetch.OffsetMode = &substraitpb.FetchRel_OffsetExpr{OffsetExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_I32{I32: 4},
+				})}
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_I64{I64: 5},
+				})}
+			},
+			expected: "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `t` LIMIT 5 OFFSET 4",
+		},
+		{
+			// A NULL offset is 0, and a NULL count means all rows
+			name:  "null_expression_bounds",
+			build: fetch(1, 1),
+			names: allColumns,
+			adjust: func(p *substraitpb.Plan) {
+				fetch := p.GetRelations()[0].GetRoot().GetInput().GetFetch()
+				null := literalExpr(&substraitpb.Expression_Literal{LiteralType: &substraitpb.Expression_Literal_Null{
+					Null: &substraitpb.Type{Kind: &substraitpb.Type_I64_{I64: &substraitpb.Type_I64{Nullability: substraitpb.Type_NULLABILITY_NULLABLE}}},
+				}})
+				fetch.OffsetMode = &substraitpb.FetchRel_OffsetExpr{OffsetExpr: null}
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: null}
+			},
+			expected: "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `t`",
+		},
+		{
+			name: "fetch_over_filter",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				filter, err := f.b.Filter(f.scan, f.fn(urnComparison, "gt", f.col(0), lit(int64(5))))
+				if err != nil {
+					return nil, err
+				}
+				return fetchRemap(f.b, filter, 0, 3, 0)
+			},
+			names:    []string{"id"},
+			expected: "SELECT `id` AS `id` FROM `t` WHERE (`id` > 5) LIMIT 3",
+		},
+		{
+			// The filter has to be applied after the LIMIT
+			name: "filter_over_fetch",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				fetch, err := f.b.Fetch(f.scan, 0, 3)
+				if err != nil {
+					return nil, err
+				}
+				ref, err := f.b.RootFieldRef(fetch, 0)
+				if err != nil {
+					return nil, err
+				}
+				filter, err := f.b.Filter(fetch, f.fn(urnComparison, "gt", ref, lit(int64(5))))
+				if err != nil {
+					return nil, err
+				}
+				return filter.Remap(0)
+			},
+			names: []string{"id"},
+			expected: "SELECT `c0` AS `id` FROM (SELECT `id` AS `c0`, `name` AS `c1`, `weird``col` AS `c2` FROM `t` LIMIT 3) AS `sub` " +
+				"WHERE (`c0` > 5)",
+		},
+		{
+			name: "fetch_over_fetch",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				inner, err := f.b.Fetch(f.scan, 1, 5)
+				if err != nil {
+					return nil, err
+				}
+				return f.b.Fetch(inner, 2, 10)
+			},
+			names: allColumns,
+			expected: "SELECT `c0` AS `a`, `c1` AS `b`, `c2` AS `c` FROM (SELECT `id` AS `c0`, `name` AS `c1`, `weird``col` AS `c2` FROM `t` " +
+				"LIMIT 5 OFFSET 1) AS `sub` LIMIT 10 OFFSET 2",
+		},
+		{
+			// emit can repeat a column, which a subquery can't have twice
+			// under the same name
+			name: "repeated_column_in_subquery",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				fetch, err := fetchRemap(f.b, f.scan, 0, 3, 0, 0)
+				if err != nil {
+					return nil, err
+				}
+				ref, err := f.b.RootFieldRef(fetch, 1)
+				if err != nil {
+					return nil, err
+				}
+				return f.b.Filter(fetch, f.fn(urnComparison, "is_not_null", ref))
+			},
+			names:    []string{"x", "y"},
+			expected: "SELECT `c0` AS `x`, `c1` AS `y` FROM (SELECT `id` AS `c0`, `id` AS `c1` FROM `t` LIMIT 3) AS `sub` WHERE (NOT (`c1` <=> NULL))",
+		},
+		{
+			name: "nested_subqueries",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				first, err := fetchRemap(f.b, f.scan, 0, 10, 0)
+				if err != nil {
+					return nil, err
+				}
+				ref, err := f.b.RootFieldRef(first, 0)
+				if err != nil {
+					return nil, err
+				}
+				filter, err := f.b.Filter(first, f.fn(urnComparison, "gt", ref, lit(int64(5))))
+				if err != nil {
+					return nil, err
+				}
+				second, err := f.b.Fetch(filter, 0, 2)
+				if err != nil {
+					return nil, err
+				}
+				ref, err = f.b.RootFieldRef(second, 0)
+				if err != nil {
+					return nil, err
+				}
+				return f.b.Filter(second, f.fn(urnComparison, "lt", ref, lit(int64(8))))
+			},
+			names: []string{"id"},
+			expected: "SELECT `c0` AS `id` FROM (SELECT `c0` AS `c0` FROM (SELECT `id` AS `c0` FROM `t` LIMIT 10) AS `sub` " +
+				"WHERE (`c0` > 5) LIMIT 2) AS `sub` WHERE (`c0` < 8)",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := fetchPlan(t, tc.build, tc.names...)
+			if tc.adjust != nil {
+				tc.adjust(p)
+			}
+			query, err := planToSQL(p)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, query)
+		})
+	}
+}
+
+func TestSubstraitFetchErrors(t *testing.T) {
+	i64 := func(v int64) *substraitpb.Expression {
+		return literalExpr(&substraitpb.Expression_Literal{LiteralType: &substraitpb.Expression_Literal_I64{I64: v}})
+	}
+	for _, tc := range []struct {
+		name        string
+		adjust      func(fetch *substraitpb.FetchRel)
+		unsupported bool
+	}{
+		{
+			name:   "negative_offset",
+			adjust: func(fetch *substraitpb.FetchRel) { fetch.OffsetMode = &substraitpb.FetchRel_Offset{Offset: -1} }, //nolint:staticcheck // deprecated, but still produced
+		},
+		{
+			// -1 means all rows, but other negative counts are invalid
+			name:   "negative_count",
+			adjust: func(fetch *substraitpb.FetchRel) { fetch.CountMode = &substraitpb.FetchRel_Count{Count: -2} }, //nolint:staticcheck // deprecated, but still produced
+		},
+		{
+			name: "negative_offset_expression",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.OffsetMode = &substraitpb.FetchRel_OffsetExpr{OffsetExpr: i64(-1)}
+			},
+		},
+		{
+			name: "negative_count_expression",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: i64(-1)}
+			},
+		},
+		{
+			name: "non_integer_count",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_Fp64{Fp64: 3},
+				})}
+			},
+		},
+		{
+			name: "non_integer_null_count",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_Null{Null: &substraitpb.Type{Kind: &substraitpb.Type_String_{String_: &substraitpb.Type_String{}}}},
+				})}
+			},
+		},
+		{
+			name: "null_count_type_variation",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_Null{Null: &substraitpb.Type{Kind: &substraitpb.Type_I64_{I64: &substraitpb.Type_I64{TypeVariationReference: 7}}}},
+				})}
+			},
+			unsupported: true,
+		},
+		{
+			name: "untyped_null_count",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_Null{Null: &substraitpb.Type{}},
+				})}
+			},
+		},
+		{
+			// Possibly from a newer Substrait version
+			name: "count_literal_without_type",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{})}
+			},
+			unsupported: true,
+		},
+		{
+			// e.g. an unsigned integer from an extension
+			name: "user_defined_count",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_UserDefined_{UserDefined: &substraitpb.Expression_Literal_UserDefined{}},
+				})}
+			},
+			unsupported: true,
+		},
+		{
+			name: "i8_count_out_of_range",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_I8{I8: 1000},
+				})}
+			},
+		},
+		{
+			// MySQL's LIMIT only takes constants
+			name: "column_count",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: &substraitpb.Expression{RexType: &substraitpb.Expression_Selection{
+					Selection: &substraitpb.Expression_FieldReference{
+						ReferenceType: &substraitpb.Expression_FieldReference_DirectReference{DirectReference: &substraitpb.Expression_ReferenceSegment{
+							ReferenceType: &substraitpb.Expression_ReferenceSegment_StructField_{StructField: &substraitpb.Expression_ReferenceSegment_StructField{}},
+						}},
+						RootType: &substraitpb.Expression_FieldReference_RootReference_{RootReference: &substraitpb.Expression_FieldReference_RootReference{}},
+					},
+				}}}
+			},
+			unsupported: true,
+		},
+		{
+			name: "count_type_variation",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.CountMode = &substraitpb.FetchRel_CountExpr{CountExpr: literalExpr(&substraitpb.Expression_Literal{
+					LiteralType: &substraitpb.Expression_Literal_I64{I64: 1}, TypeVariationReference: 1,
+				})}
+			},
+			unsupported: true,
+		},
+		{
+			name: "enhancement",
+			adjust: func(fetch *substraitpb.FetchRel) {
+				fetch.AdvancedExtension = &extensionspb.AdvancedExtension{Enhancement: &anypb.Any{}}
+			},
+			unsupported: true,
+		},
+		{
+			name:   "no_input",
+			adjust: func(fetch *substraitpb.FetchRel) { fetch.Input = nil },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := fetchPlan(t, func(f filterBuilders) (plan.Rel, error) { return f.b.Fetch(f.scan, 0, 3) }, "a", "b", "c")
+			tc.adjust(p.GetRelations()[0].GetRoot().GetInput().GetFetch())
+			_, err := planToSQL(p)
+			require.Error(t, err)
+			if tc.unsupported {
+				assert.ErrorIs(t, err, errSubstraitUnsupported)
+			} else {
+				assert.ErrorIs(t, err, errSubstraitInvalid)
+			}
+		})
+	}
 }
