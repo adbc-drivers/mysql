@@ -52,6 +52,7 @@ supported_relations:
 - relation: "READ"
   read_types:
   - "NAMED_TABLE"
+- "SORT"
 supported_expressions:
 - "LITERAL"
 - "SELECTION"

@@ -1401,3 +1401,317 @@ func TestSubstraitFetchErrors(t *testing.T) {
 		})
 	}
 }
+
+// sortBy returns sort fields on columns of rel, alternating column index and
+// direction.
+func sortBy(f filterBuilders, rel plan.Rel, keys ...any) []expr.SortField {
+	f.t.Helper()
+	var fields []expr.SortField
+	for i := 0; i < len(keys); i += 2 {
+		ref, err := f.b.RootFieldRef(rel, int32(keys[i].(int)))
+		require.NoError(f.t, err)
+		fields = append(fields, expr.SortField{Expr: ref, Kind: keys[i+1].(types.SortDirection)})
+	}
+	return fields
+}
+
+func TestSubstraitSortSQL(t *testing.T) {
+	allColumns := []string{"a", "b", "c"}
+	sortScan := func(keys ...any) func(f filterBuilders) (plan.Rel, error) {
+		return func(f filterBuilders) (plan.Rel, error) { return f.b.Sort(f.scan, sortBy(f, f.scan, keys...)...) }
+	}
+	const selectAll = "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `t`"
+	for _, tc := range []struct {
+		name     string
+		build    func(f filterBuilders) (plan.Rel, error)
+		names    []string
+		adjust   func(p *substraitpb.Plan)
+		expected string
+	}{
+		{
+			// MySQL's default order puts NULLs first for ASC and last for DESC
+			name:     "asc_nulls_first",
+			build:    sortScan(0, types.SortAscNullsFirst),
+			names:    allColumns,
+			expected: selectAll + " ORDER BY `t`.`id` ASC",
+		},
+		{
+			name:     "desc_nulls_last",
+			build:    sortScan(0, types.SortDescNullsLast),
+			names:    allColumns,
+			expected: selectAll + " ORDER BY `t`.`id` DESC",
+		},
+		{
+			name:     "asc_nulls_last",
+			build:    sortScan(2, types.SortAscNullsLast),
+			names:    allColumns,
+			expected: selectAll + " ORDER BY (`t`.`weird``col` <=> NULL) ASC, `t`.`weird``col` ASC",
+		},
+		{
+			name:     "desc_nulls_first",
+			build:    sortScan(2, types.SortDescNullsFirst),
+			names:    allColumns,
+			expected: selectAll + " ORDER BY (`t`.`weird``col` <=> NULL) DESC, `t`.`weird``col` DESC",
+		},
+		{
+			name:     "multiple_keys",
+			build:    sortScan(2, types.SortDescNullsLast, 0, types.SortAscNullsFirst),
+			names:    allColumns,
+			expected: selectAll + " ORDER BY `t`.`weird``col` DESC, `t`.`id` ASC",
+		},
+		{
+			// Unqualified, ORDER BY `id` would sort by the output column
+			// named id, which is weird`col
+			name:     "keys_qualified_against_output_names",
+			build:    sortScan(0, types.SortAscNullsFirst),
+			names:    []string{"weird`col", "x", "id"},
+			expected: "SELECT `id` AS `weird``col`, `name` AS `x`, `weird``col` AS `id` FROM `t` ORDER BY `t`.`id` ASC",
+		},
+		{
+			name: "database_table",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				scan := f.b.NamedScan([]string{"db", "t"}, testBaseSchema)
+				return f.b.Sort(scan, sortBy(f, scan, 0, types.SortAscNullsFirst)...)
+			},
+			names:    allColumns,
+			expected: "SELECT `id` AS `a`, `name` AS `b`, `weird``col` AS `c` FROM `db`.`t` ORDER BY `db`.`t`.`id` ASC",
+		},
+		{
+			name: "expression_key",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				return f.b.Sort(f.scan, expr.SortField{
+					Expr: f.fn(urnComparison, "gt", f.col(0), lit(int64(5))),
+					Kind: types.SortDescNullsLast,
+				})
+			},
+			names:    allColumns,
+			expected: selectAll + " ORDER BY (`t`.`id` > 5) DESC",
+		},
+		{
+			// A constant doesn't change the order, and MySQL would read an
+			// integer as a column position
+			name: "literal_key",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				return f.b.Sort(f.scan,
+					expr.SortField{Expr: lit(int64(2)), Kind: types.SortDescNullsLast},
+					sortBy(f, f.scan, 0, types.SortAscNullsFirst)[0])
+			},
+			names:    allColumns,
+			expected: selectAll + " ORDER BY `t`.`id` ASC",
+		},
+		{
+			name: "only_literal_keys",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				return f.b.Sort(f.scan, expr.SortField{Expr: lit(int64(2)), Kind: types.SortDescNullsLast})
+			},
+			names:    allColumns,
+			expected: selectAll,
+		},
+		{
+			// The new keys come first, and the previous order breaks ties
+			name: "sort_over_sort",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				first, err := f.b.Sort(f.scan, sortBy(f, f.scan, 0, types.SortAscNullsFirst)...)
+				if err != nil {
+					return nil, err
+				}
+				return f.b.Sort(first, sortBy(f, first, 2, types.SortDescNullsLast)...)
+			},
+			names:    allColumns,
+			expected: selectAll + " ORDER BY `t`.`weird``col` DESC, `t`.`id` ASC",
+		},
+		{
+			// The emit drops the sort key, which still orders the rows
+			name: "emit_without_key",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				sort, err := f.b.Sort(f.scan, sortBy(f, f.scan, 2, types.SortDescNullsLast)...)
+				if err != nil {
+					return nil, err
+				}
+				return sort.Remap(0)
+			},
+			names:    []string{"id"},
+			expected: "SELECT `id` AS `id` FROM `t` ORDER BY `t`.`weird``col` DESC",
+		},
+		{
+			name: "filter_and_fetch_over_sort",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				sort, err := f.b.Sort(f.scan, sortBy(f, f.scan, 0, types.SortDescNullsLast)...)
+				if err != nil {
+					return nil, err
+				}
+				ref, err := f.b.RootFieldRef(sort, 0)
+				if err != nil {
+					return nil, err
+				}
+				filter, err := f.b.Filter(sort, f.fn(urnComparison, "gt", ref, lit(int64(5))))
+				if err != nil {
+					return nil, err
+				}
+				return f.b.Fetch(filter, 0, 3)
+			},
+			names:    allColumns,
+			expected: selectAll + " WHERE (`id` > 5) ORDER BY `t`.`id` DESC LIMIT 3",
+		},
+		{
+			// The sort applies to the rows the fetch returns
+			name: "sort_over_fetch",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				fetch, err := f.b.Fetch(f.scan, 0, 3)
+				if err != nil {
+					return nil, err
+				}
+				return f.b.Sort(fetch, sortBy(f, fetch, 0, types.SortDescNullsLast)...)
+			},
+			names: allColumns,
+			expected: "SELECT `c0` AS `a`, `c1` AS `b`, `c2` AS `c` FROM (SELECT `id` AS `c0`, `name` AS `c1`, `weird``col` AS `c2` FROM `t` LIMIT 3) AS `sub` " +
+				"ORDER BY `sub`.`c0` DESC",
+		},
+		{
+			// A subquery's order isn't kept, so the outer query sorts again by
+			// the keys, which the subquery returns as hidden columns
+			name: "order_kept_through_subquery",
+			build: func(f filterBuilders) (plan.Rel, error) {
+				sort, err := f.b.Sort(f.scan, sortBy(f, f.scan, 2, types.SortAscNullsLast)...)
+				if err != nil {
+					return nil, err
+				}
+				fetch, err := fetchRemap(f.b, sort, 0, 5, 0)
+				if err != nil {
+					return nil, err
+				}
+				ref, err := f.b.RootFieldRef(fetch, 0)
+				if err != nil {
+					return nil, err
+				}
+				return f.b.Filter(fetch, f.fn(urnComparison, "gt", ref, lit(int64(1))))
+			},
+			names: []string{"id"},
+			expected: "SELECT `c0` AS `id` FROM (SELECT `id` AS `c0`, `t`.`weird``col` AS `c1` FROM `t` " +
+				"ORDER BY (`t`.`weird``col` <=> NULL) ASC, `t`.`weird``col` ASC LIMIT 5) AS `sub` " +
+				"WHERE (`c0` > 1) ORDER BY (`sub`.`c1` <=> NULL) ASC, `sub`.`c1` ASC",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := fetchPlan(t, tc.build, tc.names...)
+			if tc.adjust != nil {
+				tc.adjust(p)
+			}
+			query, err := planToSQL(p)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, query)
+		})
+	}
+}
+
+// TestSubstraitSortConstantBooleans checks that sort keys rendered as TRUE or
+// FALSE are refused, since MariaDB would read them as column positions.
+func TestSubstraitSortConstantBooleans(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  func(f filterBuilders) expr.Expression
+	}{
+		{"empty_and", func(f filterBuilders) expr.Expression { return f.fn(urnBoolean, "and") }},
+		{"empty_or", func(f filterBuilders) expr.Expression { return f.fn(urnBoolean, "or") }},
+		{"and_of_literal", func(f filterBuilders) expr.Expression { return f.fn(urnBoolean, "and", lit(true)) }},
+		{"or_of_literal", func(f filterBuilders) expr.Expression { return f.fn(urnBoolean, "or", lit(false)) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := fetchPlan(t, func(f filterBuilders) (plan.Rel, error) {
+				return f.b.Sort(f.scan, expr.SortField{Expr: tc.key(f), Kind: types.SortAscNullsFirst})
+			}, "a", "b", "c")
+			_, err := planToSQL(p)
+			assert.ErrorIs(t, err, errSubstraitUnsupported)
+		})
+	}
+}
+
+func TestSubstraitSortErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		adjust      func(sort *substraitpb.SortRel)
+		unsupported bool
+	}{
+		{
+			name:   "no_sort_fields",
+			adjust: func(sort *substraitpb.SortRel) { sort.Sorts = nil },
+		},
+		{
+			name: "unspecified_direction",
+			adjust: func(sort *substraitpb.SortRel) {
+				sort.Sorts[0].SortKind = &substraitpb.SortField_Direction{Direction: substraitpb.SortField_SORT_DIRECTION_UNSPECIFIED}
+			},
+		},
+		{
+			name: "clustered",
+			adjust: func(sort *substraitpb.SortRel) {
+				sort.Sorts[0].SortKind = &substraitpb.SortField_Direction{Direction: substraitpb.SortField_SORT_DIRECTION_CLUSTERED}
+			},
+			unsupported: true,
+		},
+		{
+			name: "unknown_direction",
+			adjust: func(sort *substraitpb.SortRel) {
+				sort.Sorts[0].SortKind = &substraitpb.SortField_Direction{Direction: 42}
+			},
+			unsupported: true,
+		},
+		{
+			name: "comparison_function",
+			adjust: func(sort *substraitpb.SortRel) {
+				sort.Sorts[0].SortKind = &substraitpb.SortField_ComparisonFunctionReference{ComparisonFunctionReference: 1}
+			},
+			unsupported: true,
+		},
+		{
+			name:        "no_sort_kind",
+			adjust:      func(sort *substraitpb.SortRel) { sort.Sorts[0].SortKind = nil },
+			unsupported: true,
+		},
+		{
+			name:   "no_expression",
+			adjust: func(sort *substraitpb.SortRel) { sort.Sorts[0].Expr = nil },
+		},
+		{
+			name: "boolean_literal_key",
+			adjust: func(sort *substraitpb.SortRel) {
+				sort.Sorts[0].Expr = literalExpr(&substraitpb.Expression_Literal{LiteralType: &substraitpb.Expression_Literal_Boolean{Boolean: true}})
+			},
+			unsupported: true,
+		},
+		{
+			name: "string_key",
+			adjust: func(sort *substraitpb.SortRel) {
+				sort.Sorts[0].Expr.GetSelection().GetDirectReference().GetStructField().Field = 1
+			},
+			unsupported: true,
+		},
+		{
+			name: "key_out_of_range",
+			adjust: func(sort *substraitpb.SortRel) {
+				sort.Sorts[0].Expr.GetSelection().GetDirectReference().GetStructField().Field = 3
+			},
+		},
+		{
+			name: "enhancement",
+			adjust: func(sort *substraitpb.SortRel) {
+				sort.AdvancedExtension = &extensionspb.AdvancedExtension{Enhancement: &anypb.Any{}}
+			},
+			unsupported: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := fetchPlan(t, func(f filterBuilders) (plan.Rel, error) {
+				return f.b.Sort(f.scan, sortBy(f, f.scan, 0, types.SortAscNullsFirst)...)
+			}, "a", "b", "c")
+			tc.adjust(p.GetRelations()[0].GetRoot().GetInput().GetSort())
+			_, err := planToSQL(p)
+			require.Error(t, err)
+			if tc.unsupported {
+				assert.ErrorIs(t, err, errSubstraitUnsupported)
+			} else {
+				assert.ErrorIs(t, err, errSubstraitInvalid)
+			}
+		})
+	}
+}

@@ -62,6 +62,9 @@ type sqlExpr struct {
 	// non-null literals set it, since base_schema nullability isn't checked
 	// against the table.
 	notNull bool
+	// column is the unquoted name of the column, for expressions that are a
+	// column of a table or subquery
+	column string
 }
 
 // selectQuery is the SQL form of a relation: a SELECT from a table or a
@@ -74,11 +77,23 @@ type selectQuery struct {
 	// named by subqueryColumn.
 	from    *selectQuery
 	columns []sqlExpr
+	// hidden are extra columns selected after columns, holding the keys of
+	// orderBy when q is read as a subquery
+	hidden  []string
 	where   []string
+	orderBy []sortKey
 	// offset is the number of rows to skip, and limit the number of rows to
 	// return, or noLimit
 	offset int64
 	limit  int64
+}
+
+// sortKey is an ORDER BY key. Column references in expr are qualified, since
+// ORDER BY would otherwise resolve them to output columns with the same name.
+type sortKey struct {
+	expr       string
+	desc       bool
+	nullsFirst bool
 }
 
 const noLimit = -1
@@ -105,13 +120,47 @@ func subqueryColumn(i int) string {
 }
 
 // wrap returns a query that reads q as a subquery, so that filters and
-// limits can be applied after q's.
+// limits can be applied after q's. MySQL doesn't keep a subquery's order, so
+// q's sort keys are added to the subquery as hidden columns, and the new
+// query is sorted by them.
 func (q *selectQuery) wrap() *selectQuery {
+	w := &selectQuery{from: q, limit: noLimit}
+	w.columns = make([]sqlExpr, len(q.columns))
+	for i, col := range q.columns {
+		name := subqueryColumn(i)
+		w.columns[i] = sqlExpr{sql: quoteIdentifier(name), typ: col.typ, column: name}
+	}
+	for i, key := range q.orderBy {
+		q.hidden = append(q.hidden, key.expr)
+		key.expr = w.qualifier() + "." + quoteIdentifier(subqueryColumn(len(q.columns)+i))
+		w.orderBy = append(w.orderBy, key)
+	}
+	return w
+}
+
+// qualifier returns the quoted name of what q reads, for qualifying its
+// columns.
+func (q *selectQuery) qualifier() string {
+	if q.from != nil {
+		return "`sub`"
+	}
+	quoted := make([]string, len(q.table))
+	for i, part := range q.table {
+		quoted[i] = quoteIdentifier(part)
+	}
+	return strings.Join(quoted, ".")
+}
+
+// qualifiedColumns returns q's columns with column references qualified.
+func (q *selectQuery) qualifiedColumns() []sqlExpr {
 	columns := make([]sqlExpr, len(q.columns))
 	for i, col := range q.columns {
-		columns[i] = sqlExpr{sql: quoteIdentifier(subqueryColumn(i)), typ: col.typ}
+		columns[i] = col
+		if col.column != "" {
+			columns[i].sql = q.qualifier() + "." + quoteIdentifier(col.column)
+		}
 	}
-	return &selectQuery{from: q, columns: columns, limit: noLimit}
+	return columns
 }
 
 // toSQL renders q, aliasing each output column to the corresponding name.
@@ -126,6 +175,12 @@ func (q *selectQuery) toSQL(names []string) string {
 		sb.WriteString(" AS ")
 		sb.WriteString(quoteIdentifier(names[i]))
 	}
+	for i, expr := range q.hidden {
+		sb.WriteString(", ")
+		sb.WriteString(expr)
+		sb.WriteString(" AS ")
+		sb.WriteString(quoteIdentifier(subqueryColumn(len(q.columns) + i)))
+	}
 	sb.WriteString(" FROM ")
 	if q.from != nil {
 		names := make([]string, len(q.from.columns))
@@ -136,16 +191,36 @@ func (q *selectQuery) toSQL(names []string) string {
 		sb.WriteString(q.from.toSQL(names))
 		sb.WriteString(") AS `sub`")
 	} else {
-		for i, part := range q.table {
-			if i > 0 {
-				sb.WriteString(".")
-			}
-			sb.WriteString(quoteIdentifier(part))
-		}
+		sb.WriteString(q.qualifier())
 	}
 	if len(q.where) > 0 {
 		sb.WriteString(" WHERE ")
 		sb.WriteString(strings.Join(q.where, " AND "))
+	}
+	if len(q.orderBy) > 0 {
+		sb.WriteString(" ORDER BY ")
+		for i, key := range q.orderBy {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			// MySQL sorts NULLs first in ascending order and last in
+			// descending order. Otherwise, sort by whether the key is NULL
+			// first.
+			if key.nullsFirst == key.desc {
+				sb.WriteString(isNullToSQL(key.expr))
+				if key.desc {
+					sb.WriteString(" DESC, ")
+				} else {
+					sb.WriteString(" ASC, ")
+				}
+			}
+			sb.WriteString(key.expr)
+			if key.desc {
+				sb.WriteString(" DESC")
+			} else {
+				sb.WriteString(" ASC")
+			}
+		}
 	}
 	if q.limited() {
 		sb.WriteString(" LIMIT ")
@@ -175,7 +250,8 @@ type extensionFunction struct {
 }
 
 // planToSQL translates a Substrait plan into a MySQL query. Currently only
-// FilterRels and FetchRels over a ReadRel over a NamedTable are supported.
+// FilterRels, FetchRels and SortRels over a ReadRel over a NamedTable are
+// supported.
 func planToSQL(plan *substraitpb.Plan) (string, error) {
 	if len(plan.GetParameterBindings()) > 0 {
 		return "", substraitUnsupported("parameter bindings")
@@ -273,6 +349,8 @@ func (t *substraitTranslator) relToQuery(rel *substraitpb.Rel) (*selectQuery, er
 		return t.filterRelToQuery(r.Filter)
 	case *substraitpb.Rel_Fetch:
 		return t.fetchRelToQuery(r.Fetch)
+	case *substraitpb.Rel_Sort:
+		return t.sortRelToQuery(r.Sort)
 	default:
 		return nil, substraitUnsupported("relation type %T", rel.GetRelType())
 	}
@@ -364,6 +442,90 @@ func (t *substraitTranslator) fetchRelToQuery(fetch *substraitpb.FetchRel) (*sel
 		q.offset, q.limit = offset, limit
 	}
 	return q, applyEmit(q, fetch.GetCommon())
+}
+
+func (t *substraitTranslator) sortRelToQuery(sort *substraitpb.SortRel) (*selectQuery, error) {
+	if sort.GetAdvancedExtension().GetEnhancement() != nil {
+		return nil, substraitUnsupported("SortRel advanced extension enhancements")
+	}
+	if len(sort.GetSorts()) == 0 {
+		return nil, substraitInvalid("SortRel has no sort fields")
+	}
+	q, err := t.relToQuery(sort.GetInput())
+	if err != nil {
+		return nil, err
+	}
+	// The sort applies to the rows after the input's LIMIT
+	if q.limited() {
+		q = q.wrap()
+	}
+	input := q.qualifiedColumns()
+	var keys []sortKey
+	for _, field := range sort.GetSorts() {
+		key, ok, err := t.sortFieldToKey(field, input)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			keys = append(keys, key)
+		}
+	}
+	// A previous order is kept for rows the new keys don't order, which is
+	// correct whether or not sorts are meant to be stable
+	q.orderBy = append(keys, q.orderBy...)
+	return q, applyEmit(q, sort.GetCommon())
+}
+
+// sortFieldToKey translates a sort field. It returns false for a constant
+// key, which doesn't affect the order, and which MySQL would read as a column
+// position if it's an integer.
+func (t *substraitTranslator) sortFieldToKey(field *substraitpb.SortField, input []sqlExpr) (sortKey, bool, error) {
+	if field.GetExpr() == nil {
+		return sortKey{}, false, substraitInvalid("sort field has no expression")
+	}
+	var key sortKey
+	switch k := field.GetSortKind().(type) {
+	case *substraitpb.SortField_Direction:
+		switch k.Direction {
+		case substraitpb.SortField_SORT_DIRECTION_ASC_NULLS_FIRST:
+			key.nullsFirst = true
+		case substraitpb.SortField_SORT_DIRECTION_ASC_NULLS_LAST:
+		case substraitpb.SortField_SORT_DIRECTION_DESC_NULLS_FIRST:
+			key.desc, key.nullsFirst = true, true
+		case substraitpb.SortField_SORT_DIRECTION_DESC_NULLS_LAST:
+			key.desc = true
+		case substraitpb.SortField_SORT_DIRECTION_UNSPECIFIED:
+			return sortKey{}, false, substraitInvalid("sort field without a direction")
+		default:
+			// Includes CLUSTERED, and directions added in newer Substrait
+			// versions
+			return sortKey{}, false, substraitUnsupported("sort direction %s", k.Direction)
+		}
+	case *substraitpb.SortField_ComparisonFunctionReference:
+		return sortKey{}, false, substraitUnsupported("sorting with comparison functions")
+	default:
+		// Also covers sort kinds added in newer Substrait versions
+		return sortKey{}, false, substraitUnsupported("sort field without a known sort kind")
+	}
+
+	expr, err := t.exprToSQL(field.GetExpr(), input)
+	if err != nil {
+		return sortKey{}, false, err
+	}
+	if !isComparableType(expr.typ) {
+		return sortKey{}, false, substraitUnsupported("sorting by type %T", expr.typ.GetKind())
+	}
+	// MariaDB reads TRUE and FALSE in ORDER BY as column positions 1 and 0,
+	// even in parentheses. They come from boolean literals, and from and()
+	// and or() with no arguments or a single literal argument.
+	if sql := strings.Trim(expr.sql, "()"); sql == "TRUE" || sql == "FALSE" {
+		return sortKey{}, false, substraitUnsupported("constant boolean sort keys")
+	}
+	if field.GetExpr().GetLiteral() != nil {
+		return sortKey{}, false, nil
+	}
+	key.expr = expr.sql
+	return key, true, nil
 }
 
 // fetchBounds returns a FetchRel's offset and its count, or noLimit if all
@@ -519,7 +681,7 @@ func baseSchemaColumns(schema *substraitpb.NamedStruct) ([]sqlExpr, error) {
 		if name == "" {
 			return nil, substraitInvalid("base_schema has an empty column name")
 		}
-		columns[i] = sqlExpr{sql: quoteIdentifier(name), typ: types[i]}
+		columns[i] = sqlExpr{sql: quoteIdentifier(name), typ: types[i], column: name}
 	}
 	return columns, nil
 }
@@ -684,30 +846,30 @@ func literalToSQL(lit *substraitpb.Expression_Literal) (sqlExpr, error) {
 	switch l := lit.GetLiteralType().(type) {
 	case *substraitpb.Expression_Literal_Boolean:
 		if l.Boolean {
-			return sqlExpr{"TRUE", boolType, true}, nil
+			return sqlExpr{sql: "TRUE", typ: boolType, notNull: true}, nil
 		}
-		return sqlExpr{"FALSE", boolType, true}, nil
+		return sqlExpr{sql: "FALSE", typ: boolType, notNull: true}, nil
 	case *substraitpb.Expression_Literal_I8:
 		// I8 and I16 literals are stored as int32
 		if l.I8 < math.MinInt8 || l.I8 > math.MaxInt8 {
 			return sqlExpr{}, substraitInvalid("i8 literal %d out of range", l.I8)
 		}
-		return sqlExpr{intLiteralToSQL(int64(l.I8)), i8Type, true}, nil
+		return sqlExpr{sql: intLiteralToSQL(int64(l.I8)), typ: i8Type, notNull: true}, nil
 	case *substraitpb.Expression_Literal_I16:
 		if l.I16 < math.MinInt16 || l.I16 > math.MaxInt16 {
 			return sqlExpr{}, substraitInvalid("i16 literal %d out of range", l.I16)
 		}
-		return sqlExpr{intLiteralToSQL(int64(l.I16)), i16Type, true}, nil
+		return sqlExpr{sql: intLiteralToSQL(int64(l.I16)), typ: i16Type, notNull: true}, nil
 	case *substraitpb.Expression_Literal_I32:
-		return sqlExpr{intLiteralToSQL(int64(l.I32)), i32Type, true}, nil
+		return sqlExpr{sql: intLiteralToSQL(int64(l.I32)), typ: i32Type, notNull: true}, nil
 	case *substraitpb.Expression_Literal_I64:
-		return sqlExpr{intLiteralToSQL(l.I64), i64Type, true}, nil
+		return sqlExpr{sql: intLiteralToSQL(l.I64), typ: i64Type, notNull: true}, nil
 	case *substraitpb.Expression_Literal_Fp32:
 		s, err := floatLiteralToSQL(float64(l.Fp32))
-		return sqlExpr{s, fp32Type, true}, err
+		return sqlExpr{sql: s, typ: fp32Type, notNull: true}, err
 	case *substraitpb.Expression_Literal_Fp64:
 		s, err := floatLiteralToSQL(l.Fp64)
-		return sqlExpr{s, fp64Type, true}, err
+		return sqlExpr{sql: s, typ: fp64Type, notNull: true}, err
 	case *substraitpb.Expression_Literal_Decimal_:
 		sql, err := decimalLiteralToSQL(l.Decimal)
 		if err != nil {
@@ -717,13 +879,13 @@ func literalToSQL(lit *substraitpb.Expression_Literal) (sqlExpr, error) {
 			Precision: l.Decimal.GetPrecision(),
 			Scale:     l.Decimal.GetScale(),
 		}}}
-		return sqlExpr{sql, typ, true}, nil
+		return sqlExpr{sql: sql, typ: typ, notNull: true}, nil
 	case *substraitpb.Expression_Literal_Date:
 		if l.Date < minDateLiteral || l.Date > maxDateLiteral {
 			return sqlExpr{}, substraitUnsupported("date literals outside MySQL's range 1000-01-01 to 9999-12-31")
 		}
 		date := time.Unix(int64(l.Date)*86400, 0).UTC().Format(time.DateOnly)
-		return sqlExpr{"DATE '" + date + "'", dateType, true}, nil
+		return sqlExpr{sql: "DATE '" + date + "'", typ: dateType, notNull: true}, nil
 	case *substraitpb.Expression_Literal_Null:
 		if l.Null.GetKind() == nil {
 			return sqlExpr{}, substraitInvalid("null literal has no type")
@@ -815,16 +977,24 @@ func checkComparable(name string, args []sqlExpr) error {
 			return substraitInvalid("function %s has arguments of different types", name)
 		}
 	}
-	switch args[0].typ.GetKind().(type) {
+	if !isComparableType(args[0].typ) {
+		return substraitUnsupported("comparisons of type %T (%s)", args[0].typ.GetKind(), name)
+	}
+	return nil
+}
+
+// isComparableType reports whether MySQL compares and sorts values of type t
+// the way Substrait does.
+func isComparableType(t *substraitpb.Type) bool {
+	switch t.GetKind().(type) {
 	case *substraitpb.Type_Bool,
 		*substraitpb.Type_I8_, *substraitpb.Type_I16_, *substraitpb.Type_I32_, *substraitpb.Type_I64_,
 		*substraitpb.Type_Fp32, *substraitpb.Type_Fp64,
 		*substraitpb.Type_Decimal_, *substraitpb.Type_Date_,
 		*substraitpb.Type_PrecisionTimestamp_, *substraitpb.Type_PrecisionTimestampTz:
-		return nil
-	default:
-		return substraitUnsupported("comparisons of type %T (%s)", args[0].typ.GetKind(), name)
+		return true
 	}
+	return false
 }
 
 // sameType reports whether a and b are the same type, ignoring nullability.

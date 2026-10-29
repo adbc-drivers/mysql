@@ -534,6 +534,134 @@ func (s *MySQLTestSuite) TestSubstraitFetch() {
 	})
 }
 
+func (s *MySQLTestSuite) TestSubstraitSort() {
+	for _, query := range []string{
+		"DROP TABLE IF EXISTS substrait_sort",
+		"CREATE TABLE substrait_sort (id BIGINT NOT NULL PRIMARY KEY, v BIGINT)",
+		"INSERT INTO substrait_sort VALUES (1, 30), (2, NULL), (3, 10), (4, 20), (5, NULL)",
+	} {
+		s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, query))
+		_, err := s.stmt.ExecuteUpdate(s.ctx)
+		s.Require().NoError(err)
+	}
+	defer func() {
+		s.NoError(s.stmt.SetSqlQuery(s.ctx, "DROP TABLE substrait_sort"))
+		_, err := s.stmt.ExecuteUpdate(s.ctx)
+		s.NoError(err)
+	}()
+
+	schema := types.NamedStruct{
+		Names: []string{"id", "v"},
+		Struct: types.StructType{
+			Nullability: types.NullabilityRequired,
+			Types: []types.Type{
+				&types.Int64Type{Nullability: types.NullabilityRequired},
+				&types.Int64Type{Nullability: types.NullabilityNullable},
+			},
+		},
+	}
+	// sortByV sorts by v in the given direction, then by id
+	sortByV := func(b plan.Builder, input plan.Rel, direction types.SortDirection) (plan.Rel, error) {
+		v, err := b.RootFieldRef(input, 1)
+		if err != nil {
+			return nil, err
+		}
+		id, err := b.RootFieldRef(input, 0)
+		if err != nil {
+			return nil, err
+		}
+		return b.Sort(input, expr.SortField{Expr: v, Kind: direction}, expr.SortField{Expr: id, Kind: types.SortAscNullsFirst})
+	}
+	sortScan := func(direction types.SortDirection) func(b plan.Builder, scan plan.Rel) (plan.Rel, error) {
+		return func(b plan.Builder, scan plan.Rel) (plan.Rel, error) { return sortByV(b, scan, direction) }
+	}
+
+	for _, tc := range []struct {
+		name  string
+		build func(b plan.Builder, scan plan.Rel) (plan.Rel, error)
+		// names are the root names of the plan's two columns, id and v
+		names    []string
+		expected []int64
+	}{
+		{name: "asc_nulls_first", build: sortScan(types.SortAscNullsFirst), expected: []int64{2, 5, 3, 4, 1}},
+		{name: "asc_nulls_last", build: sortScan(types.SortAscNullsLast), expected: []int64{3, 4, 1, 2, 5}},
+		{name: "desc_nulls_first", build: sortScan(types.SortDescNullsFirst), expected: []int64{2, 5, 1, 4, 3}},
+		{name: "desc_nulls_last", build: sortScan(types.SortDescNullsLast), expected: []int64{1, 4, 3, 2, 5}},
+		{
+			// Unqualified, ORDER BY `v` would sort by the output column v,
+			// which is the table's id
+			name:     "output_named_like_key",
+			build:    sortScan(types.SortAscNullsFirst),
+			names:    []string{"v", "id"},
+			expected: []int64{2, 5, 3, 4, 1},
+		},
+		{
+			name: "top_n",
+			build: func(b plan.Builder, scan plan.Rel) (plan.Rel, error) {
+				sort, err := sortByV(b, scan, types.SortDescNullsLast)
+				if err != nil {
+					return nil, err
+				}
+				return b.Fetch(sort, 0, 2)
+			},
+			expected: []int64{1, 4},
+		},
+		{
+			// The fetch returns the first 3 rows in primary key order
+			name: "sort_over_fetch",
+			build: func(b plan.Builder, scan plan.Rel) (plan.Rel, error) {
+				fetch, err := b.Fetch(scan, 0, 3)
+				if err != nil {
+					return nil, err
+				}
+				return sortByV(b, fetch, types.SortAscNullsLast)
+			},
+			expected: []int64{3, 1, 2},
+		},
+		{
+			// The filter over the fetch reads it as a subquery, and has to
+			// keep its order
+			name: "order_kept_through_subquery",
+			build: func(b plan.Builder, scan plan.Rel) (plan.Rel, error) {
+				sort, err := sortByV(b, scan, types.SortDescNullsLast)
+				if err != nil {
+					return nil, err
+				}
+				fetch, err := b.Fetch(sort, 0, 4)
+				if err != nil {
+					return nil, err
+				}
+				ref, err := b.RootFieldRef(fetch, 0)
+				if err != nil {
+					return nil, err
+				}
+				cond, err := b.ScalarFn(substraitext.SubstraitDefaultURNPrefix+"functions_comparison", "gt", nil, ref, expr.NewPrimitiveLiteral(int64(1), false))
+				if err != nil {
+					return nil, err
+				}
+				return b.Filter(fetch, cond)
+			},
+			expected: []int64{4, 3, 2},
+		},
+	} {
+		s.Run(tc.name, func() {
+			b := plan.NewBuilderDefault()
+			rel, err := tc.build(b, b.NamedScan([]string{"substrait_sort"}, schema))
+			s.Require().NoError(err)
+			names := tc.names
+			if names == nil {
+				names = []string{"id", "v"}
+			}
+			p, err := b.Plan(rel, names)
+			s.Require().NoError(err)
+
+			got, err := s.substraitIDs(s.substraitPlan(p, nil))
+			s.Require().NoError(err)
+			s.Equal(tc.expected, got)
+		})
+	}
+}
+
 // TestSubstraitZeroDate checks null tests on a NOT NULL DATE column holding
 // a zero date, which MySQL's IS NULL treats as NULL.
 func (s *MySQLTestSuite) TestSubstraitZeroDate() {
