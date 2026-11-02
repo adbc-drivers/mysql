@@ -26,7 +26,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/stretchr/testify v1.12.1
-	github.com/substrait-io/substrait v0.87.0
+	github.com/substrait-io/substrait v0.107.0
 	github.com/substrait-io/substrait-go/v8 v8.1.1
 	github.com/substrait-io/substrait-protobuf/go v0.85.0
 	google.golang.org/protobuf v1.36.12
