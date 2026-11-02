@@ -17,8 +17,8 @@ module github.com/adbc-drivers/mysql
 go 1.27.3
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20261025235621-8d02e9bfbb92
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20261025235621-8d02e9bfbb92
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20261101040555-5cee18f5413f
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20261101040555-5cee18f5413f
 	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260817015335-4ff17728aee2
 	github.com/apache/arrow-adbc/go/adbc v1.13.0
 	github.com/apache/arrow-go/v18 v18.8.0
@@ -45,7 +45,7 @@ require (
 	github.com/creasty/defaults v1.8.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/goccy/go-json v0.11.2 // indirect
+	github.com/goccy/go-json v0.12.0 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
