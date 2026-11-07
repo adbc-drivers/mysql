@@ -14,8 +14,6 @@
 
 import argparse
 import functools
-import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from adbc_drivers_validation import generate_documentation, model
@@ -35,53 +33,20 @@ def get_quirks(version: str, *, vendor: str) -> model.DriverQuirks:
         raise ValueError(f"unsupported {vendor} version: {version}")
 
 
-def filter_reports(reports: list[Path], output: Path) -> list[Path]:
-    """Copy reports for documentation, excluding MariaDB test cases."""
-    filtered_reports = []
-    for report in reports:
-        tree = ET.parse(report)
-        has_results = False
-        for suite in tree.iter("testsuite"):
-            for testcase in list(suite.findall("testcase")):
-                driver = testcase.find("./properties/property[@name='driver']")
-                if driver is None:
-                    continue
-                vendor = driver.get("value", "").partition(":")[0]
-                if vendor == "mariadb":
-                    suite.remove(testcase)
-                else:
-                    has_results = True
-        if has_results:
-            filtered = output / report.name
-            tree.write(filtered, encoding="utf-8", xml_declaration=True)
-            filtered_reports.append(filtered)
-    return filtered_reports
-
-
-def generate_docs(output: Path) -> None:
-    """Generate MySQL and Databend documentation from validation reports."""
-
-    template = Path(__file__).parent.parent.parent / "docs/mysql.md"
-    template = template.resolve()
-
-    reports = sorted(Path(".").glob("validation-report*.xml"))
-    with tempfile.TemporaryDirectory(prefix="mysql-docs-") as temporary:
-        reports = filter_reports(reports, Path(temporary))
-        if not reports:
-            print("No MySQL or Databend validation results; skipping documentation.")
-            return
-        generate_documentation.generate(
-            "mysql",
-            get_quirks,
-            [("mysql", "MySQL"), ("databend", "Databend")],
-            reports,
-            template,
-            output.resolve(),
-        )
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    generate_docs(args.output)
+
+    template = Path(__file__).parent.parent.parent / "docs/mysql.md"
+    template = template.resolve()
+
+    reports = [report.resolve() for report in Path(".").glob("validation-report*.xml")]
+    generate_documentation.generate(
+        "mysql",
+        get_quirks,
+        [("mysql", "MySQL"), ("databend", "Databend")],
+        reports,
+        template,
+        args.output.resolve(),
+    )

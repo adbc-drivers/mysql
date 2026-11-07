@@ -170,7 +170,6 @@ jobs:
         include:
           # I think we only need to test one platform, but we can change that later
           - { platform: linux, arch: amd64, runner: ubuntu-latest, service_name: "test-service", vendor_version: "mysql", environment: null, aws: false, azure: false, gcloud: false }
-          - { platform: linux, arch: amd64, runner: ubuntu-latest, service_name: "mariadb", vendor_version: "mariadb", environment: null, aws: false, azure: false, gcloud: false }
           - { platform: linux, arch: amd64, runner: ubuntu-latest, service_name: "databend", vendor_version: "databend", environment: null, aws: false, azure: false, gcloud: false }
     environment: ${{ matrix.environment }}
     permissions:
