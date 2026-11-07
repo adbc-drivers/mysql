@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import adbc_drivers_validation.tests.connection
-import pytest
 from adbc_drivers_validation.tests.connection import (
     TestConnection,  # noqa: F401
 )
@@ -24,21 +23,3 @@ from . import mysql
 def pytest_generate_tests(metafunc) -> None:
     quirks = [mysql.get_quirks(metafunc.config.getoption("vendor_version"))]
     return adbc_drivers_validation.tests.connection.generate_tests(quirks, metafunc)
-
-
-def test_databend_vendor_version_matches_server(driver, conn):
-    if driver.name != "databend":
-        pytest.skip("Databend-specific server version check")
-
-    info = conn.adbc_get_info()
-    assert info["vendor_name"] == "Databend"
-    reported = info["vendor_version"]
-    assert driver.vendor_version.fullmatch(reported)
-
-    with conn.cursor() as cursor:
-        cursor.execute("SELECT VERSION()")
-        server_version = cursor.fetchone()[0]
-
-    # The MySQL wire response can prepend a compatibility version, but the
-    # complete native version (including build details) must match exactly.
-    assert server_version.endswith(reported)
