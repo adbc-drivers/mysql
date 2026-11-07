@@ -39,8 +39,9 @@ const (
 	OptionKeyVendor               = "mysql.vendor"
 	OptionKeyZeroDatetimeBehavior = "mysql.query.zero_datetime_behavior"
 
-	OptionValueVendorMySQL   = "mysql"
-	OptionValueVendorMariaDB = "mariadb"
+	OptionValueVendorMySQL    = "mysql"
+	OptionValueVendorMariaDB  = "mariadb"
+	OptionValueVendorDatabend = "databend"
 
 	OptionValueZeroDatetimeBehaviorError         = "error"
 	OptionValueZeroDatetimeBehaviorConvertToNull = "convert_to_null"
@@ -451,6 +452,7 @@ type mysqlConnectionImpl struct {
 	*sqlwrapper.ConnectionImplBase // Embed sqlwrapper connection for all standard functionality
 
 	version              string
+	vendor               string
 	zeroDatetimeBehavior zeroDatetimeBehavior
 }
 
@@ -470,6 +472,7 @@ type mysqlConnectionFactory struct {
 func (f *mysqlConnectionFactory) CreateDatabase(database *sqlwrapper.DatabaseImplBase) (sqlwrapper.DatabaseImpl, error) {
 	return &mysqlDatabase{
 		DatabaseImplBase:     database,
+		vendor:               OptionValueVendorMySQL,
 		zeroDatetimeBehavior: zeroDatetimeBehaviorError,
 	}, nil
 }
@@ -481,6 +484,7 @@ func (f *mysqlConnectionFactory) CreateConnection(
 	// Wrap the pre-built sqlwrapper connection with MySQL-specific functionality
 	return &mysqlConnectionImpl{
 		ConnectionImplBase:   conn,
+		vendor:               conn.Database.Derived.(*mysqlDatabase).vendor,
 		zeroDatetimeBehavior: conn.Database.Derived.(*mysqlDatabase).zeroDatetimeBehavior,
 	}, nil
 }
@@ -494,6 +498,7 @@ func (f *mysqlConnectionFactory) CreateStatement(stmt *sqlwrapper.StatementImplB
 
 type mysqlDatabase struct {
 	*sqlwrapper.DatabaseImplBase
+	vendor               string
 	zeroDatetimeBehavior zeroDatetimeBehavior
 }
 
@@ -508,6 +513,8 @@ func (db *mysqlDatabase) SetOptions(ctx context.Context, opts map[string]string)
 
 func (db *mysqlDatabase) GetOption(ctx context.Context, key string) (string, error) {
 	switch key {
+	case OptionKeyVendor:
+		return db.vendor, nil
 	case OptionKeyZeroDatetimeBehavior:
 		return db.zeroDatetimeBehavior.String(), nil
 	default:
@@ -517,6 +524,12 @@ func (db *mysqlDatabase) GetOption(ctx context.Context, key string) (string, err
 
 func (db *mysqlDatabase) SetOption(ctx context.Context, key, value string) error {
 	switch key {
+	case OptionKeyVendor:
+		db.vendor = strings.ToLower(strings.TrimSpace(value))
+		if db.vendor == "" {
+			db.vendor = OptionValueVendorMySQL
+		}
+		return nil
 	case OptionKeyZeroDatetimeBehavior:
 		behavior, err := parseZeroDatetimeBehavior(value, &db.ErrorHelper)
 		if err != nil {
@@ -624,6 +637,21 @@ func (s *mysqlStatement) SetOption(ctx context.Context, key, value string) error
 // SQL_IDENTIFIER_QUOTE_CHAR, in the [500, 1000) XDBC range reserved by ADBC.
 const infoSqlIdentifierQuoteChar = 504
 
+type mysqlDriver struct {
+	*sqlwrapper.Driver
+}
+
+func (d *mysqlDriver) NewDatabaseWithContext(ctx context.Context, opts map[string]string) (adbc.DatabaseWithContext, error) {
+	db, err := d.Driver.NewDatabaseWithContext(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.SetOptions(ctx, map[string]string{OptionKeyVendor: opts[OptionKeyVendor]}); err != nil {
+		return nil, errors.Join(err, db.Close(ctx))
+	}
+	return db, nil
+}
+
 // NewDriver constructs the ADBC Driver for "mysql".
 func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 	factory := &mysqlConnectionFactory{}
@@ -638,5 +666,5 @@ func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 		adbc.InfoVendorSubstrait:                  true,
 		adbc.InfoCode(infoSqlIdentifierQuoteChar): "`",
 	})
-	return driver
+	return &mysqlDriver{Driver: driver}
 }
