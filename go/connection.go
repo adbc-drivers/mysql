@@ -80,17 +80,17 @@ func (c *mysqlConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes [
 	vendorName := "MySQL"
 	if c.vendor == OptionValueVendorDatabend {
 		vendorName = "Databend"
-	}
-	if c.version == "" && c.vendor == OptionValueVendorDatabend {
-		var version string
-		if err := c.Conn.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version); err != nil {
-			return c.ErrorHelper.WrapIO(err, "failed to get version")
+		if c.version == "" {
+			var version string
+			if err := c.Conn.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version); err != nil {
+				return c.ErrorHelper.WrapIO(err, "failed to get version")
+			}
+			// Databend prefixes its native version with a MySQL compatibility version.
+			if _, nativeVersion, ok := strings.Cut(version, "-v"); ok {
+				version = "v" + nativeVersion
+			}
+			c.version = version
 		}
-		// Databend prefixes its native version with a MySQL compatibility version.
-		if _, nativeVersion, ok := strings.Cut(version, "-v"); ok {
-			version = "v" + nativeVersion
-		}
-		c.version = version
 	} else if c.version == "" {
 		var version, comment string
 		if err := c.Conn.QueryRowContext(ctx, "SELECT @@version, @@version_comment").Scan(&version, &comment); err != nil {
