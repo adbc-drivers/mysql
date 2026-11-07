@@ -20,9 +20,5 @@ service_name = "test-service"
 vendor_version = "mysql"
 
 [[lang.go.validation.configs]]
-service_name = "mariadb"
-vendor_version = "mariadb"
-
-[[lang.go.validation.configs]]
 service_name = "databend"
 vendor_version = "databend"

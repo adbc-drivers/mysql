@@ -25,11 +25,9 @@ from . import mysql
 def get_quirks(version: str, *, vendor: str) -> model.DriverQuirks:
     if vendor == "mysql" and version == "9.7":
         return mysql.MySQLQuirks()
-    elif vendor == "mariadb" and version == "12.2":
-        return mysql.MariaDBQuirks()
-    elif vendor == "databend" and version == "12.2":
+    elif vendor == "databend" and version == mysql.DatabendQuirks.short_version:
         return mysql.DatabendQuirks()
-    elif vendor not in ("mysql", "mariadb", "databend"):
+    elif vendor not in ("mysql", "databend"):
         raise ValueError(f"unsupported vendor: {vendor}")
     else:
         raise ValueError(f"unsupported {vendor} version: {version}")
@@ -47,11 +45,7 @@ if __name__ == "__main__":
     generate_documentation.generate(
         "mysql",
         get_quirks,
-        [
-            ("mysql", "MySQL"),
-            ("mariadb", "MariaDB"),
-            ("databend", "Databend"),
-        ],
+        [("mysql", "MySQL"), ("databend", "Databend")],
         reports,
         template,
         args.output.resolve(),

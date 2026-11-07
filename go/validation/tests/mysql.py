@@ -118,8 +118,9 @@ class MariaDBQuirks(MySQLQuirks):
 
 class DatabendQuirks(MySQLQuirks):
     name = "databend"
-    vendor_version = re.compile(r".+")
-    short_version = "12.2"
+    vendor_name = "Databend"
+    short_version = "1.2.881"
+    vendor_version = re.compile(rf"v{re.escape(short_version)}(?:[-+].*)?\Z")
     # Databend's MySQL wire protocol does not support prepared statements,
     # so bind-based validation cases must be skipped. The current driver also
     # uses prepared/parameterized statements for table schema lookup and bulk
