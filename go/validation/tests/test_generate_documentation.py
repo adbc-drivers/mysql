@@ -38,7 +38,7 @@ def report_drivers(path: Path) -> list[str]:
 def test_filter_mixed_reports_preserves_originals(tmp_path):
     mixed = tmp_path / "validation-report.xml"
     mariadb = tmp_path / "validation-report-mariadb.xml"
-    drivers = ["mysql:9.7", "mariadb:12.2", "databend:12.2"]
+    drivers = ["mysql:9.7", "mariadb:12.2", "databend:1.2.881"]
     write_report(mixed, drivers)
     write_report(mariadb, ["mariadb:12.2"])
     filtered = tmp_path / "filtered"
@@ -47,7 +47,7 @@ def test_filter_mixed_reports_preserves_originals(tmp_path):
     reports = docs.filter_reports([mixed, mariadb], filtered)
 
     assert len(reports) == 1
-    assert report_drivers(reports[0]) == ["mysql:9.7", "databend:12.2"]
+    assert report_drivers(reports[0]) == ["mysql:9.7", "databend:1.2.881"]
     assert report_drivers(mixed) == drivers
     assert report_drivers(mariadb) == ["mariadb:12.2"]
 
@@ -69,7 +69,7 @@ def test_mariadb_only_skips_documentation(tmp_path, monkeypatch, capsys):
 
 def test_combined_docs_only_include_mysql_and_databend(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    for driver in ["mysql:9.7", "mariadb:12.2", "databend:12.2"]:
+    for driver in ["mysql:9.7", "mariadb:12.2", "databend:1.2.881"]:
         vendor = driver.partition(":")[0]
         write_report(tmp_path / f"validation-report-{vendor}.xml", [driver])
     included = []
@@ -83,4 +83,4 @@ def test_combined_docs_only_include_mysql_and_databend(tmp_path, monkeypatch):
 
     docs.generate_docs(tmp_path / "generated")
 
-    assert sorted(included) == ["databend:12.2", "mysql:9.7"]
+    assert sorted(included) == ["databend:1.2.881", "mysql:9.7"]

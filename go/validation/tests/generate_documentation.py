@@ -27,7 +27,7 @@ from . import mysql
 def get_quirks(version: str, *, vendor: str) -> model.DriverQuirks:
     if vendor == "mysql" and version == "9.7":
         return mysql.MySQLQuirks()
-    elif vendor == "databend" and version == "12.2":
+    elif vendor == "databend" and version == mysql.DatabendQuirks.short_version:
         return mysql.DatabendQuirks()
     elif vendor not in ("mysql", "databend"):
         raise ValueError(f"unsupported vendor: {vendor}")
