@@ -17,6 +17,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -132,6 +133,9 @@ func (f *MySQLDBFactory) BuildMySQLDSN(opts map[string]string) (string, error) {
 func (f *MySQLDBFactory) parseToMySQLDSN(mysqlURI, username, password string) (string, error) {
 	u, err := url.Parse(mysqlURI)
 	if err != nil {
+		if urlErr, ok := errors.AsType[*url.Error](err); ok {
+			err = urlErr.Err
+		}
 		return "", fmt.Errorf("invalid MySQL URI format: %v", err)
 	}
 
@@ -170,7 +174,7 @@ func (f *MySQLDBFactory) parseToMySQLDSN(mysqlURI, username, password string) (s
 	case "":
 		// Case 2: Empty host is invalid - hostname must be explicit
 		// Use parentheses syntax for sockets: mysql://user@(/path/to/socket)/db
-		return "", fmt.Errorf("missing hostname in URI: %s. Use explicit hostname or socket syntax: mysql://user@(socketpath)/db", mysqlURI)
+		return "", fmt.Errorf("missing hostname in URI. Use explicit hostname or socket syntax: mysql://user@(socketpath)/db")
 
 	default:
 		// Case 3: Regular TCP connection with a hostname
