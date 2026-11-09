@@ -19,10 +19,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/go-sql-driver/mysql"
@@ -130,9 +130,9 @@ func (f *MySQLDBFactory) BuildMySQLDSN(opts map[string]string) (string, error) {
 //	mysql://user:pass@host/db?charset=utf8mb4 → user:pass@tcp(host:3306)/db?charset=utf8mb4
 //	mysql://user@(/path/to/socket.sock)/db → user@unix(/path/to/socket.sock)/db
 func (f *MySQLDBFactory) parseToMySQLDSN(mysqlURI, username, password string) (string, error) {
-	u, err := url.Parse(mysqlURI)
+	u, err := driverbase.SafeParseURL(mysqlURI)
 	if err != nil {
-		return "", fmt.Errorf("invalid MySQL URI format: %v", err)
+		return "", fmt.Errorf("invalid MySQL URI format: %w", err)
 	}
 
 	cfg := mysql.NewConfig()
@@ -170,7 +170,7 @@ func (f *MySQLDBFactory) parseToMySQLDSN(mysqlURI, username, password string) (s
 	case "":
 		// Case 2: Empty host is invalid - hostname must be explicit
 		// Use parentheses syntax for sockets: mysql://user@(/path/to/socket)/db
-		return "", fmt.Errorf("missing hostname in URI: %s. Use explicit hostname or socket syntax: mysql://user@(socketpath)/db", mysqlURI)
+		return "", fmt.Errorf("missing hostname in URI. Use explicit hostname or socket syntax: mysql://user@(socketpath)/db")
 
 	default:
 		// Case 3: Regular TCP connection with a hostname
