@@ -72,7 +72,7 @@ jobs:
           persist-credentials: false
           submodules: 'recursive'
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5  # v7.1.0
         with:
           cache: false
           cache-dependency-path: go/go.sum
@@ -191,7 +191,7 @@ jobs:
           persist-credentials: false
           submodules: 'recursive'
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5  # v7.1.0
         with:
           cache: false
           cache-dependency-path: go/go.sum
@@ -321,7 +321,7 @@ jobs:
           persist-credentials: false
           submodules: 'recursive'
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5  # v7.1.0
         with:
           cache: false
           cache-dependency-path: go/go.sum
@@ -416,7 +416,7 @@ jobs:
           persist-credentials: false
           submodules: 'recursive'
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5  # v7.1.0
         with:
           cache: false
           check-latest: true
@@ -497,7 +497,7 @@ jobs:
           - { platform: windows, arch: arm64, runner: windows-11-vs2026-arm }
     steps:
       # for now, install dbc from main
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5  # v7.1.0
         with:
           cache: false
           go-version: 'stable'
