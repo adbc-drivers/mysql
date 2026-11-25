@@ -21,7 +21,7 @@ require (
 	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20261109034954-869784ceb17f
 	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260817015335-4ff17728aee2
 	github.com/apache/arrow-adbc/go/adbc v1.13.0
-	github.com/apache/arrow-go/v18 v18.8.0
+	github.com/apache/arrow-go/v18 v18.9.0
 	github.com/go-ext/variant v1.2.4
 	github.com/go-sql-driver/mysql v1.10.2
 	github.com/goccy/go-yaml v1.19.2
